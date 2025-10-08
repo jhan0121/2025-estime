@@ -1,4 +1,4 @@
-rootProject.name = 'estime'
+rootProject.name = 'estime-test'
 
 include 'core'
 include 'application'
