@@ -24,10 +24,13 @@ logging:
     webhook-url: ${DISCORD_LOG_WEBHOOK_URL}
 
 management:
+  endpoints:
+    web:
+      exposure:
+        include: "health, info, prometheus"
   metrics:
-    export:
-      cloudwatch:
-        enabled: true
-        namespace: "EC2/estime-api/prod"
-        region: ap-northeast-2
-        url: ${CLOUDWATCH_URL}
+    tags:
+      application: estime-api
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
