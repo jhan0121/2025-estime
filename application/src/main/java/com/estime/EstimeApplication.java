@@ -11,4 +11,5 @@ public class EstimeApplication {
     public static void main(final String[] args) {
         SpringApplication.run(EstimeApplication.class, args);
     }
+
 }
