@@ -363,12 +363,21 @@ jobs:
 
   rollback:
     runs-on: [ self-hosted, test ]
-    needs: deploy
+    needs: [build-and-push, deploy]
     if: failure() && needs.deploy.outputs.current != 'none'
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Create env file for Docker Compose
+        run: |
+          cat <<EOF > .env
+          IMAGE_NAME=${{ secrets.PROD_IMAGE_NAME }}
+          IMAGE_TAG=${{ needs.build-and-push.outputs.version }}
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
+          EOF
 
       - name: Rollback to previous environment
         run: |
