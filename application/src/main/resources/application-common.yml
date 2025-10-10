@@ -20,3 +20,22 @@ slack:
 
 logging:
   config: classpath:logback-spring.xml
+
+management:
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  endpoints:
+    web:
+      exposure:
+        include: "health, info, prometheus"
+  health:
+    diskSpace:
+      enabled: false
+  metrics:
+    tags:
+      application: estime-api
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true

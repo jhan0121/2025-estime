@@ -22,15 +22,3 @@ url:
 logging:
   discord:
     webhook-url: ${DISCORD_LOG_WEBHOOK_URL}
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: "health, info, prometheus"
-  metrics:
-    tags:
-      application: estime-api
-    distribution:
-      percentiles-histogram:
-        http.server.requests: true
