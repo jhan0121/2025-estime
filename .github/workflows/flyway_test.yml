@@ -59,6 +59,8 @@ jobs:
 
           FORBIDDEN_FOUND=false
           ERROR_MESSAGES=()
+          REVIEW_WARNINGS_DETAILS_FILE="review_warnings_details.txt"
+          > $REVIEW_WARNINGS_DETAILS_FILE # Clear the file at the start
 
           echo "--- '금지' 유형 검사 ---"
           FORBIDDEN_PATTERNS="DROP[[:space:]]+(TABLE|DATABASE|COLUMN)|TRUNCATE[[:space:]]+TABLE"
@@ -81,28 +83,28 @@ jobs:
           SCHEMA_CHANGE_PATTERNS="ALTER[[:space:]]+TABLE.*(RENAME|MODIFY|CHANGE)"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$SCHEMA_CHANGE_PATTERNS"; then
             echo "::warning::[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE)이 감지되었습니다. 애플리케이션 호환성을 반드시 확인하세요."
-            cat changed_files.txt | xargs -r grep -iE "$SCHEMA_CHANGE_PATTERNS"
+            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$SCHEMA_CHANGE_PATTERNS" | sed 's#^#WARNING | 스키마 구조 변경 | #' >> review_warnings_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
           fi
 
           PERF_LOCK_PATTERNS="ALTER[[:space:]]+TABLE.*(ENGINE|CHARACTER[[:space:]]+SET)|(CREATE|DROP)[[:space:]]+INDEX"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$PERF_LOCK_PATTERNS"; then
             echo "::warning::[검토 필요] 인덱스 또는 테이블 속성 변경이 감지되었습니다. 대용량 테이블의 경우 서비스 중단(Lock)을 유발할 수 있습니다."
-            cat changed_files.txt | xargs -r grep -iE "$PERF_LOCK_PATTERNS"
+            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$PERF_LOCK_PATTERNS" | sed 's#^#WARNING | 인덱스/테이블 속성 변경 | #' >> review_warnings_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
           fi
 
           DB_LOGIC_PATTERNS="(CREATE|DROP)[[:space:]]+(TRIGGER|PROCEDURE|FUNCTION)|(CREATE|ALTER|DROP)[[:space:]]+VIEW|(ADD|DROP)[[:space:]]+CONSTRAINT"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$DB_LOGIC_PATTERNS"; then
             echo "::warning::[검토 필요] DB 로직(트리거, 프로시저, 뷰) 또는 제약조건 변경이 감지되었습니다. 숨겨진 부작용이 없는지 확인하세요."
-            cat changed_files.txt | xargs -r grep -iE "$DB_LOGIC_PATTERNS"
+            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DB_LOGIC_PATTERNS" | sed 's#^#WARNING | DB 로직/제약조건 변경 | #' >> review_warnings_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
           fi
 
           DATA_CHANGE_PATTERNS="UPDATE[[:space:]]+\w+[[:space:]]+SET"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE"; then
             echo "::warning::[검토 필요] UPDATE 구문이 감지되었습니다. WHERE 절을 반드시 확인하여 의도치 않은 데이터 변경을 방지하세요."
-            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE"
+            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE" | sed 's#^#WARNING | UPDATE WHERE 절 확인 | #' >> review_warnings_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
           fi
 
@@ -261,37 +263,60 @@ jobs:
             `;
             
             // 위험한 명령어 발견 시
-            if ('${{ steps.static_analysis.outputs.forbidden_found }}' === 'true') {
-              const fs = require('fs');
+            if ('${{ steps.static_analysis.outputs.forbidden_found }}' === 'true' || '${{ steps.static_analysis.outputs.review_warnings_found }}' === 'true') {
               const errorsContent = fs.existsSync('forbidden_errors.txt') 
                 ? fs.readFileSync('forbidden_errors.txt', 'utf8') 
                 : '';
+              const reviewWarningsContent = fs.existsSync('review_warnings_details.txt') 
+                ? fs.readFileSync('review_warnings_details.txt', 'utf8') 
+                : '';
+
+              let header = '## ❌ 위험한 명령어 발견';
+              if ('${{ steps.static_analysis.outputs.forbidden_found }}' !== 'true' && '${{ steps.static_analysis.outputs.review_warnings_found }}' === 'true') {
+                header = '## ⚠️ 검토 필요 명령어';
+              }
+
+              let errorDetails = `
+              ${header}
             
-            let errorDetails = `
-            ## ❌ 위험한 명령어 발견
+              다음 위험한 명령어들이 발견되었습니다:
             
-            다음 위험한 명령어들이 발견되었습니다:
-            
-            | 위험 레벨 | 사유 | 대상 쿼리 |
-            |:---------|:-----|:----------|
-            `;
-            if (errorsContent) {
-              errorsContent.split('\n').forEach(line => {
-                if (line.trim()) {
-                  const match = line.match(/^- \[(.*?)\] (.*)$/);
-                  if (match) {
-                    const reason = match[1];
-                    const query = match[2].replace(/\r/g, '');
-                    errorDetails += `| 금지 | ${reason} | ${query} |`;
-                  } else {
-                    errorDetails += `| 금지 | 알 수 없음 | ${line} |`;
+                | 위험 레벨 | 사유 | 대상 쿼리 |
+                |:---------|:-----|:----------|
+              `;
+              if (errorsContent) {
+                errorsContent.split('\n').forEach(line => {
+                  if (line.trim()) {
+                    const match = line.match(/^- \[(.*?)\] (.*)$/);
+                    if (match) {
+                      const reason = match[1];
+                      const query = match[2].replace(/\r/g, '');
+                      errorDetails += `| 금지 | ${reason} | ${query} |\n`;
+                    } else {
+                      errorDetails += `| 금지 | 알 수 없음 | ${line} |\n`;
+                    }
                   }
-                }
-              });
-            } else {
-              errorDetails += `| 금지 | 상세 내용 확인 불가 | - |`;
-            }
-            report += errorDetails + `**이러한 명령어는 프로덕션 데이터를 손실시킬 수 있으므로 절대 허용되지 않습니다.**`;
+                });
+              }
+              if (reviewWarningsContent) {
+                reviewWarningsContent.split('\n').forEach(line => {
+                  if (line.trim()) {
+                    const parts = line.split(' | ');
+                    if (parts.length === 3) {
+                      const riskLevel = parts[0];
+                      const reason = parts[1];
+                      const query = parts[2].replace(/\r/g, '');
+                      errorDetails += `| ${riskLevel} | ${reason} | ${query} |\n`;
+                    } else {
+                      errorDetails += `| 알 수 없음 | 알 수 없음 | ${line} |\n`;
+                    }
+                  }
+                });
+              }
+              if (!errorsContent && !reviewWarningsContent) {
+                errorDetails += `| - | 상세 내용 확인 불가 | - |\n`;
+              }
+              report += errorDetails + `**이러한 명령어는 프로덕션 데이터를 손실시킬 수 있으므로 절대 허용되지 않습니다.**`;
             }
             
             // 하위 호환성 문제 발견 시
@@ -317,9 +342,9 @@ jobs:
                       const riskLevel = parts[0];
                       const reason = parts[1];
                       const query = parts[2].replace(/\r/g, '');
-                      compatibilityDetails += `| ${riskLevel} | ${reason} | ${query} |`;
+                      compatibilityDetails += `| ${riskLevel} | ${reason} | ${query} |\n`;
                     } else {
-                      compatibilityDetails += `| 알 수 없음 | 알 수 없음 | ${line} |`;
+                      compatibilityDetails += `| 알 수 없음 | 알 수 없음 | ${line} |\n`;
                     }
                   }
                 });
