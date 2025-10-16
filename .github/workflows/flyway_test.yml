@@ -118,27 +118,39 @@ jobs:
           fi
 
       - name: 하위 호환성 검사
+        id: backward_compatibility_check
         if: steps.get_changed_files.outputs.has_changed_files == 'true'
         run: |
           echo "하위 호환성 문제 검사 시작..."
           ERROR_FOUND=false
+          COMPATIBILITY_REPORT_FILE="compatibility_report.txt"
+          > $COMPATIBILITY_REPORT_FILE # Clear the file at the start
 
-          if cat changed_files.txt | xargs -r grep -qiE "ADD[[:space:]]+COLUMN.*NOT[[:space:]]+NULL" | grep -viE "DEFAULT"; then
-            echo "::error::[하위 호환성 위반] DEFAULT 값 없이 NOT NULL 컬럼을 추가하고 있습니다. 이는 무중단 배포 시 구버전 애플리케이션에서 INSERT 오류를 유발하는 치명적인 변경입니다."
+          # ADD COLUMN NOT NULL without DEFAULT
+          ADD_NOT_NULL_NO_DEFAULT=$(cat changed_files.txt | xargs -r grep -iE "ADD[[:space:]]+COLUMN.*NOT[[:space:]]+NULL" | grep -viE "DEFAULT" || true)
+          if [[ -n "$ADD_NOT_NULL_NO_DEFAULT" ]]; then
+            echo "ERROR | DEFAULT 값 없이 NOT NULL 컬럼 추가 | $ADD_NOT_NULL_NO_DEFAULT" >> $COMPATIBILITY_REPORT_FILE
             ERROR_FOUND=true
           fi
 
-          if cat changed_files.txt | xargs -r grep -qiE "ALTER[[:space:]]+TABLE.*RENAME"; then
-            echo "::error::[하위 호환성 위반] 테이블 또는 컬럼명을 변경(RENAME)하고 있습니다. 이는 구버전 애플리케이션의 코드를 즉시 실패시키는 치명적인 변경입니다. 이름 변경은 2단계 이상의 마이그레이션(추가->전환->삭제)으로 진행해야 합니다."
+          # ALTER TABLE RENAME (table or column)
+          ALTER_RENAME=$(cat changed_files.txt | xargs -r grep -iE "ALTER[[:space:]]+TABLE.*RENAME" || true)
+          if [[ -n "$ALTER_RENAME" ]]; then
+            echo "ERROR | 테이블/컬럼명 변경(RENAME) | $ALTER_RENAME" >> $COMPATIBILITY_REPORT_FILE
             ERROR_FOUND=true
           fi
 
-          if cat changed_files.txt | xargs -r grep -qiE "ALTER[[:space:]]+COLUMN.*DROP[[:space:]]+DEFAULT"; then
-            echo "::warning::[하위 호환성 주의] 컬럼의 DEFAULT 값을 삭제하고 있습니다. 구버전 애플리케이션이 이 DEFAULT 값에 의존하고 있지 않은지 확인이 필요합니다."
+          # ALTER COLUMN DROP DEFAULT
+          ALTER_DROP_DEFAULT=$(cat changed_files.txt | xargs -r grep -iE "ALTER[[:space:]]+COLUMN.*DROP[[:space:]]+DEFAULT" || true)
+          if [[ -n "$ALTER_DROP_DEFAULT" ]]; then
+            echo "WARNING | 컬럼 DEFAULT 값 삭제 | $ALTER_DROP_DEFAULT" >> $COMPATIBILITY_REPORT_FILE
           fi
 
           if [ "$ERROR_FOUND" = true ]; then
+            echo "::error::[하위 호환성 위반] 치명적인 하위 호환성 문제가 발견되었습니다. 상세 내용은 보고서를 확인하세요."
             exit 1
+          elif [ -s "$COMPATIBILITY_REPORT_FILE" ]; then # Check if file exists and is not empty for warnings
+            echo "::warning::[하위 호환성 주의] 하위 호환성 주의 사항이 발견되었습니다. 상세 내용은 보고서를 확인하세요."
           fi
 
       - name: Flyway CLI 다운로드
@@ -248,17 +260,86 @@ jobs:
             | 검사 항목 | 결과 |
             |----------|------|
             | 위험한 SQL 명령어 검사 | ${{ steps.static_analysis.outputs.critical_found == 'true' && '❌ 실패' || '✅ 통과' }} |
+            | 하위 호환성 검사 | ${{ steps.backward_compatibility_check.outcome == 'success' && '✅ 통과' || '❌ 실패' }} |
             | 마이그레이션 실행 테스트 | ${{ steps.flyway_migrate.outputs.status == 'success' && '✅ 통과' || steps.flyway_migrate.outputs.status == 'failed' && '❌ 실패' || '⏭️ 스킵' }} |
             `;
             
             // 위험한 명령어 발견 시
-            if ('${{ steps.static_analysis.outputs.critical_found }}' === 'true') {
+            if ('${{ steps.static_analysis.outputs.forbidden_found }}' === 'true') {
               const fs = require('fs');
-              const errors = fs.existsSync('critical_errors.txt') 
-                ? fs.readFileSync('critical_errors.txt', 'utf8') 
-                : '- 상세 내용 확인 불가';
+              const errorsContent = fs.existsSync('forbidden_errors.txt') 
+                ? fs.readFileSync('forbidden_errors.txt', 'utf8') 
+                : '';
             
-              report += `\n## ❌ 위험한 명령어 발견\n\n다음 위험한 명령어들이 발견되었습니다:\n\n${errors}\n**이러한 명령어는 프로덕션 데이터를 손실시킬 수 있으므로 절대 허용되지 않습니다.**\n`;
+              let errorDetails = `
+## ❌ 위험한 명령어 발견
+
+다음 위험한 명령어들이 발견되었습니다:
+
+| 위험 레벨 | 사유 | 대상 쿼리 |
+|:---------|:-----|:----------|
+`;
+              if (errorsContent) {
+                errorsContent.split('\n').forEach(line => {
+                  if (line.trim()) {
+                    const match = line.match(/^- \[(.*?)\] (.*)$/);
+                    if (match) {
+                      const reason = match[1];
+                      const query = match[2];
+                      errorDetails += `| 금지 | ${reason} | ${query} |
+`;
+                    } else {
+                      errorDetails += `| 금지 | 알 수 없음 | ${line} |
+`;
+                    }
+                  }
+                });
+              } else {
+                errorDetails += `| 금지 | 상세 내용 확인 불가 | - |
+`;
+              }
+              report += errorDetails + `
+**이러한 명령어는 프로덕션 데이터를 손실시킬 수 있으므로 절대 허용되지 않습니다.**
+`;
+            }
+
+            // 하위 호환성 문제 발견 시
+            if ('${{ steps.backward_compatibility_check.outcome }}' === 'failure' || fs.existsSync('compatibility_report.txt') && fs.readFileSync('compatibility_report.txt', 'utf8').trim() !== '') {
+              const fs = require('fs');
+              const compatibilityContent = fs.existsSync('compatibility_report.txt') 
+                ? fs.readFileSync('compatibility_report.txt', 'utf8') 
+                : '';
+            
+              let compatibilityDetails = `
+## ⚠️ 하위 호환성 검사 상세
+
+다음 하위 호환성 문제/주의 사항이 발견되었습니다:
+
+| 위험 레벨 | 사유 | 대상 쿼리 |
+|:---------|:-----|:----------|
+`;
+              if (compatibilityContent) {
+                compatibilityContent.split('\n').forEach(line => {
+                  if (line.trim()) {
+                    const parts = line.split(' | ');
+                    if (parts.length === 3) {
+                      const riskLevel = parts[0];
+                      const reason = parts[1];
+                      const query = parts[2];
+                      compatibilityDetails += `| ${riskLevel} | ${reason} | ${query} |
+`;
+                    } else {
+                      compatibilityDetails += `| 알 수 없음 | 알 수 없음 | ${line} |
+`;
+                    }
+                  }
+                });
+              } else {
+                compatibilityDetails += `| 알 수 없음 | 상세 내용 확인 불가 | - |
+`;
+              }
+              report += compatibilityDetails + `
+`;
             }
             
             // 마이그레이션 실패 시
