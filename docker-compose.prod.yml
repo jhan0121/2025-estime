@@ -1,3 +1,6 @@
+networks:
+  monitor_net:
+
 services:
   mysql:
     container_name: estime-mysql
@@ -20,13 +23,15 @@ services:
     container_name: estime-api-blue
     image: ${IMAGE_NAME}:${IMAGE_TAG:-latest}
     env_file:
-      - ./application/.env.prod
+      - ./.env.prod
     ports:
       - "127.0.0.1:8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: prod
     volumes:
       - /app/logs:/app/logs
+    networks:
+      - monitor_net
     restart: unless-stopped
     depends_on:
       mysql:
@@ -40,13 +45,15 @@ services:
     container_name: estime-api-green
     image: ${IMAGE_NAME}:${IMAGE_TAG:-latest}
     env_file:
-      - ./application/.env.prod
+      - ./.env.prod
     ports:
       - "127.0.0.1:8081:8080"
     environment:
       SPRING_PROFILES_ACTIVE: prod
     volumes:
       - /app/logs:/app/logs
+    networks:
+      - monitor_net
     restart: unless-stopped
     depends_on:
       mysql:
@@ -56,5 +63,20 @@ services:
         soft: 65536
         hard: 65536
 
+  alloy:
+    image: grafana/alloy:v1.11.0
+    container_name: alloy
+    env_file:
+      - ./.env.prod
+    volumes:
+      - ./alloy/config-prod.river:/etc/alloy/config-prod.river
+      - /app/logs:/app/logs
+      - alloy-data:/var/lib/alloy
+    command: "run /etc/alloy/config-prod.river"
+    networks:
+      - monitor_net
+    restart: unless-stopped
+
 volumes:
+  alloy-data:
   mysql-data:
