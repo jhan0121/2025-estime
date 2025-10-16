@@ -5,7 +5,7 @@ on:
     branches:
       [ be/dev, be/prod ]
     paths:
-      - 'src/main/resources/db/migration/**'
+      - 'application/src/main/resources/db/migration/**'
     types:
       [ opened, synchronize, reopened ]
 
