@@ -58,6 +58,7 @@ jobs:
           echo "정책: '금지' 유형은 즉시 실패, '검토' 유형은 경고 메시지 출력"
 
           FORBIDDEN_FOUND=false
+          REVIEW_FOUND=false
           ERROR_MESSAGES=()
           REVIEW_WARNINGS_DETAILS_FILE="review_warnings_details.txt"
           > $REVIEW_WARNINGS_DETAILS_FILE # Clear the file at the start
@@ -85,6 +86,7 @@ jobs:
             echo "::warning::[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE)이 감지되었습니다. 애플리케이션 호환성을 반드시 확인하세요."
             cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$SCHEMA_CHANGE_PATTERNS" | sed 's#^#WARNING | 스키마 구조 변경 | #' >> review_warnings_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
+            REVIEW_FOUND=true
           fi
 
           PERF_LOCK_PATTERNS="ALTER[[:space:]]+TABLE.*(ENGINE|CHARACTER[[:space:]]+SET)|(CREATE|DROP)[[:space:]]+INDEX"
@@ -92,13 +94,15 @@ jobs:
             echo "::warning::[검토 필요] 인덱스 또는 테이블 속성 변경이 감지되었습니다. 대용량 테이블의 경우 서비스 중단(Lock)을 유발할 수 있습니다."
             cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$PERF_LOCK_PATTERNS" | sed 's#^#WARNING | 인덱스/테이블 속성 변경 | #' >> review_warnings_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
+            REVIEW_FOUND=true
           fi
 
-          DB_LOGIC_PATTERNS="(CREATE|DROP)[[:space:]]+(TRIGGER|PROCEDURE|FUNCTION)|(CREATE|ALTER|DROP)[[:space:]]+VIEW|(ADD|DROP)[[:space:]]+CONSTRAINT"
+          DB_LOGIC_PATTERNS="(CREATE|ALTER|DROP)[[:space:]]+VIEW|(ADD|DROP)[[:space:]]+CONSTRAINT"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$DB_LOGIC_PATTERNS"; then
-            echo "::warning::[검토 필요] DB 로직(트리거, 프로시저, 뷰) 또는 제약조건 변경이 감지되었습니다. 숨겨진 부작용이 없는지 확인하세요."
+            echo "::warning::[검토 필요] DB 뷰 또는 제약조건 변경이 감지되었습니다. 숨겨진 부작용이 없는지 확인하세요."
             cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DB_LOGIC_PATTERNS" | sed 's#^#WARNING | DB 로직/제약조건 변경 | #' >> review_warnings_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
+            REVIEW_FOUND=true
           fi
 
           DATA_CHANGE_PATTERNS="UPDATE[[:space:]]+\w+[[:space:]]+SET"
@@ -106,6 +110,7 @@ jobs:
             echo "::warning::[검토 필요] UPDATE 구문이 감지되었습니다. WHERE 절을 반드시 확인하여 의도치 않은 데이터 변경을 방지하세요."
             cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE" | sed 's#^#WARNING | UPDATE WHERE 절 확인 | #' >> review_warnings_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
+            REVIEW_FOUND=true
           fi
 
           # --- 최종 결과 처리 ---
@@ -118,8 +123,12 @@ jobs:
             cat forbidden_errors.txt
             exit 1
           else
-            echo "위험/검토 명령어 미발견"
             echo "forbidden_found=false" >> $GITHUB_OUTPUT
+            if [ "$REVIEW_FOUND" = true ]; then
+              echo "'검토' 유형 경고 발견"
+            else
+              echo "위험/검토 명령어가 미발견"
+            fi
           fi
 
       - name: 하위 호환성 검사
