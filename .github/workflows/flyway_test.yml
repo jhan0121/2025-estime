@@ -365,14 +365,6 @@ jobs:
             const pull_number = ${{ github.event.pull_request.number }}
             const updated_title = `[FLYWAY 검증 실패] ${{ github.event.pull_request.title }}`
             
-            await github.rest.pulls.createReview({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pull_number,
-              body: 'Flyway 마이그레이션 검증에 실패했습니다. 위의 검증 결과를 확인하고 수정해주세요.',
-              event: 'REQUEST_CHANGES'
-            })
-            
             await github.rest.pulls.update({
               owner: context.repo.owner,
               repo: context.repo.repo,
