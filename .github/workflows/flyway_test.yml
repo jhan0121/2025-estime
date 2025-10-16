@@ -97,9 +97,9 @@ jobs:
           fi
 
           DATA_CHANGE_PATTERNS="UPDATE[[:space:]]+\w+[[:space:]]+SET"
-          if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$DATA_CHANGE_PATTERNS"; then
+          if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE"; then
             echo "::warning::[검토 필요] UPDATE 구문이 감지되었습니다. WHERE 절을 반드시 확인하여 의도치 않은 데이터 변경을 방지하세요."
-            cat changed_files.txt | xargs -r grep -iE "$DATA_CHANGE_PATTERNS"
+            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE"
           fi
 
           # --- 최종 결과 처리 ---
@@ -193,8 +193,6 @@ jobs:
         continue-on-error: true
         run: |
           echo "Flyway 마이그레이션 검증 실행 시작..."
-          echo "Flyway User: ${{ steps.create_user.outputs.flyway_user }}"
-          echo "Flyway Password: ${{ steps.create_user.outputs.flyway_password }}"
           
           ./flyway-11.8.2/flyway migrate "-url=jdbc:mysql://127.0.0.1:3306/testdb?allowPublicKeyRetrieval=true&useSSL=false" "-user=${{ steps.create_user.outputs.flyway_user }}" "-password=${{ steps.create_user.outputs.flyway_password }}" "-locations=filesystem:application/src/main/resources/db/migration" "-connectRetries=10" > flyway_migration.log 2>&1
           
