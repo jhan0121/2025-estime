@@ -1,0 +1,309 @@
+name: Flyway Migration Validation (Test)
+
+on:
+  pull_request:
+    branches:
+      [ be/dev, be/prod ]
+    paths:
+      - 'src/main/resources/db/migration/**'
+    types:
+      [ opened, synchronize, reopened ]
+
+jobs:
+  flyway-validation:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: testpw
+          MYSQL_DATABASE: testdb
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Github Repository 파일 불러오기
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: 변경된 Flyway 마이그레이션 파일 목록 가져오기
+        id: get_changed_files
+        run: |
+          echo "PR에서 변경된 Flyway 마이그레이션 파일 목록 탐색 시작..."
+          
+          git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} -- 'src/main/resources/db/migration/**.sql' \
+            | grep -E '/(V|R)[0-9_.]+__.*\.sql$' > changed_files.txt
+
+          if [ ! -s changed_files.txt ]; then
+            echo "변경된 Flyway 마이그레이션 파일이 없습니다. 정적 분석을 건너뜁니다."
+            echo "has_changed_files=false" >> $GITHUB_OUTPUT
+          else
+            echo "검증 대상 파일:"
+            cat changed_files.txt
+            echo "has_changed_files=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: SQL 명령어 정적 검사
+        id: static_analysis
+        if: steps.get_changed_files.outputs.has_changed_files == 'true'
+        run: |
+          echo "위험 SQL 명령어 검사 시작..."
+          echo "정책: '금지' 유형은 즉시 실패, '검토' 유형은 경고 메시지 출력"
+
+          FORBIDDEN_FOUND=false
+          ERROR_MESSAGES=()
+
+          # --- 정책 1: '금지' 유형 검사 ---
+          FORBIDDEN_PATTERNS="DROP[[:space:]]+(TABLE|DATABASE|COLUMN)|TRUNCATE[[:space:]]+TABLE"
+
+          if cat changed_files.txt | xargs -r grep -qiE "$FORBIDDEN_PATTERNS"; then
+            FORBIDDEN_FOUND=true
+            MESSAGES=$(cat changed_files.txt | xargs -r grep -iE "$FORBIDDEN_PATTERNS" | sed 's/^/- [DROP/TRUNCATE/DROP COLUMN] /')
+            ERROR_MESSAGES+=("$MESSAGES")
+          fi
+
+          DELETE_NO_WHERE=$(cat changed_files.txt | xargs -r grep -iE "DELETE[[:space:]]+FROM" | grep -viE "WHERE" || true)
+          if [[ -n "$DELETE_NO_WHERE" ]]; then
+            FORBIDDEN_FOUND=true
+            MESSAGES=$(echo "$DELETE_NO_WHERE" | sed 's/^/- [DELETE without WHERE] /')
+            ERROR_MESSAGES+=("$MESSAGES")
+          fi
+
+          # --- 정책 2: '검토' 유형 검사 (유형별 분리) ---
+          echo "--- '검토' 유형 검사 시작 ---"
+
+          SCHEMA_CHANGE_PATTERNS="ALTER[[:space:]]+TABLE.*(RENAME|MODIFY|CHANGE)"
+          if cat changed_files.txt | xargs -r grep -qiE "$SCHEMA_CHANGE_PATTERNS"; then
+            echo "::warning::[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE)이 감지되었습니다. 애플리케이션 호환성을 반드시 확인하세요."
+            cat changed_files.txt | xargs -r grep -iE "$SCHEMA_CHANGE_PATTERNS"
+          fi
+
+          PERF_LOCK_PATTERNS="ALTER[[:space:]]+TABLE.*(ENGINE|CHARACTER[[:space:]]+SET)|(CREATE|DROP)[[:space:]]+INDEX"
+          if cat changed_files.txt | xargs -r grep -qiE "$PERF_LOCK_PATTERNS"; then
+            echo "::warning::[검토 필요] 인덱스 또는 테이블 속성 변경이 감지되었습니다. 대용량 테이블의 경우 서비스 중단(Lock)을 유발할 수 있습니다."
+            cat changed_files.txt | xargs -r grep -iE "$PERF_LOCK_PATTERNS"
+          fi
+
+          DB_LOGIC_PATTERNS="(CREATE|DROP)[[:space:]]+(TRIGGER|PROCEDURE|FUNCTION)|(CREATE|ALTER|DROP)[[:space:]]+VIEW|(ADD|DROP)[[:space:]]+CONSTRAINT"
+          if cat changed_files.txt | xargs -r grep -qiE "$DB_LOGIC_PATTERNS"; then
+            echo "::warning::[검토 필요] DB 로직(트리거, 프로시저, 뷰) 또는 제약조건 변경이 감지되었습니다. 숨겨진 부작용이 없는지 확인하세요."
+            cat changed_files.txt | xargs -r grep -iE "$DB_LOGIC_PATTERNS"
+          fi
+
+          DATA_CHANGE_PATTERNS="UPDATE[[:space:]]+\w+[[:space:]]+SET"
+          if cat changed_files.txt | xargs -r grep -qiE "$DATA_CHANGE_PATTERNS"; then
+            echo "::warning::[검토 필요] UPDATE 구문이 감지되었습니다. WHERE 절을 반드시 확인하여 의도치 않은 데이터 변경을 방지하세요."
+            cat changed_files.txt | xargs -r grep -iE "$DATA_CHANGE_PATTERNS"
+          fi
+
+          # --- 최종 결과 처리 ---
+          if [ "$FORBIDDEN_FOUND" = true ]; then
+            echo "::error::[정책 위반] Flyway 스크립트에 '금지' 유형 SQL 명령어 포함되어 있음"
+            echo "forbidden_found=true" >> $GITHUB_OUTPUT
+          
+            printf "%s\n" "${ERROR_MESSAGES[@]}" > forbidden_errors.txt
+          
+            cat forbidden_errors.txt
+            exit 1
+          else
+            echo "위험한 명령어 미발견"
+            echo "forbidden_found=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 하위 호환성 검사
+        if: steps.get_changed_files.outputs.has_changed_files == 'true'
+        run: |
+          echo "하위 호환성 문제 검사 시작..."
+          ERROR_FOUND=false
+
+          if cat changed_files.txt | xargs -r grep -qiE "ADD[[:space:]]+COLUMN.*NOT[[:space:]]+NULL" | grep -viE "DEFAULT"; then
+            echo "::error::[하위 호환성 위반] DEFAULT 값 없이 NOT NULL 컬럼을 추가하고 있습니다. 이는 무중단 배포 시 구버전 애플리케이션에서 INSERT 오류를 유발하는 치명적인 변경입니다."
+            ERROR_FOUND=true
+          fi
+
+          if cat changed_files.txt | xargs -r grep -qiE "ALTER[[:space:]]+TABLE.*RENAME"; then
+            echo "::error::[하위 호환성 위반] 테이블 또는 컬럼명을 변경(RENAME)하고 있습니다. 이는 구버전 애플리케이션의 코드를 즉시 실패시키는 치명적인 변경입니다. 이름 변경은 2단계 이상의 마이그레이션(추가->전환->삭제)으로 진행해야 합니다."
+            ERROR_FOUND=true
+          fi
+
+          if cat changed_files.txt | xargs -r grep -qiE "ALTER[[:space:]]+COLUMN.*DROP[[:space:]]+DEFAULT"; then
+            echo "::warning::[하위 호환성 주의] 컬럼의 DEFAULT 값을 삭제하고 있습니다. 구버전 애플리케이션이 이 DEFAULT 값에 의존하고 있지 않은지 확인이 필요합니다."
+          fi
+
+          if [ "$ERROR_FOUND" = true ]; then
+            exit 1
+          fi
+
+      - name: Flyway CLI 다운로드
+        if: steps.static_analysis.outputs.critical_found != 'true'
+        run: |
+          echo "Flyway CLI 다운로드 시작..."
+          
+          wget -q https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/11.8.2/flyway-commandline-11.8.2-linux-x64.tar.gz
+          tar -xzf flyway-commandline-11.8.2-linux-x64.tar.gz
+          chmod +x flyway-11.8.2/flyway
+          
+          echo "Flyway CLI 다운로드 완료"
+
+      - name: 테스트 유저 생성
+        id: create_user
+        run: |
+          # root/testpw: DB 컨테이너의 관리자. 테스트 유저 생성을 위해 단 한번 사용
+          echo "테스트 유저 생성 시작..."
+          
+          FLYWAY_USER="test_api_user"
+          FLYWAY_PASSWORD="test_password"
+          
+          mysql -h 127.0.0.1 -uroot -ptestpw testdb << EOF
+            CREATE USER '${FLYWAY_USER}'@'%' IDENTIFIED BY '${FLYWAY_PASSWORD}';
+          
+            GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, EXECUTE 
+            ON testdb.* TO '${FLYWAY_USER}'@'%';
+          
+            FLUSH PRIVILEGES;
+          
+            SHOW GRANTS FOR '${FLYWAY_USER}'@'%';
+          EOF
+          
+          echo "flyway_user=${FLYWAY_USER}" >> $GITHUB_OUTPUT
+          echo "flyway_password=${FLYWAY_PASSWORD}" >> $GITHUB_OUTPUT
+          
+          echo "테스트 유저 생성 완료"
+
+      - name: Flyway CLI 기반 마이그레이션 검증 실행
+        id: flyway_migrate
+        if: steps.static_analysis.outputs.forbidden_found != 'true'
+        continue-on-error: true
+        run: |
+          # create_user 스텝에서 생성한 flyway_user/flyway_password 사용
+          echo "Flyway 마이그레이션 검증 실행 시작..."
+          
+          ./flyway-11.8.2/flyway migrate \
+            -url=jdbc:mysql://127.0.0.1:3306/testdb \
+            -user=${{ steps.create_user.outputs.flyway_user }} \
+            -password=${{ steps.create_user.outputs.flyway_password }} \
+            -locations=filesystem:src/main/resources/db/migration \
+            -connectRetries=10 \
+            2>&1 | tee flyway_migration.log
+          
+          EXIT_CODE=${PIPESTATUS[0]}
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "✅ 마이그레이션 성공"
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ 마이그레이션 실패"
+            echo "status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: 마이그레이션 실패 원인 분석
+        if: steps.flyway_migrate.outputs.status == 'failed'
+        run: |
+          echo "::error::❌ Flyway 마이그레이션이 실패했습니다"
+          echo ""
+          echo "==== 실패 원인 분석 ===="
+          
+          echo -e "## ❌ 마이그레이션 실패\n\n" > migration_error.txt
+          echo "### 상세 로그" >> migration_error.txt
+          echo '```' >> migration_error.txt
+          tail -100 flyway_migration.log >> migration_error.txt
+          echo '```' >> migration_error.txt
+
+      - name: 마이그레이션 히스토리 확인
+        if: steps.flyway_migrate.outputs.status == 'success'
+        run: |
+          # create_user 스텝에서 생성한 flyway_user/flyway_password 사용
+          echo "마이그레이션 히스토리 확인 시작..."
+          
+          mysql -h 127.0.0.1 -u${{ steps.create_user.outputs.flyway_user }} -p${{ steps.create_user.outputs.flyway_password }} testdb << 'EOF'
+            SELECT 
+              version, 
+              description, 
+              type, 
+              installed_on, 
+              success 
+            FROM flyway_schema_history 
+            ORDER BY installed_rank DESC 
+            LIMIT 10;
+          EOF
+
+      - name: PR에 검증 결과 코멘트
+        if: always()
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ github.TOKEN }}
+          script: |
+            let report = `# Flyway 마이그레이션 검증 결과
+            
+            ## 검증 항목
+            
+            | 검사 항목 | 결과 |
+            |----------|------|
+            | 위험한 SQL 명령어 검사 | ${{ steps.static_analysis.outputs.critical_found == 'true' && '❌ 실패' || '✅ 통과' }} |
+            | 마이그레이션 실행 테스트 | ${{ steps.flyway_migrate.outputs.status == 'success' && '✅ 통과' || steps.flyway_migrate.outputs.status == 'failed' && '❌ 실패' || '⏭️ 스킵' }} |
+            `;
+            
+            // 위험한 명령어 발견 시
+            if ('${{ steps.static_analysis.outputs.critical_found }}' === 'true') {
+              const fs = require('fs');
+              const errors = fs.existsSync('critical_errors.txt') 
+                ? fs.readFileSync('critical_errors.txt', 'utf8') 
+                : '- 상세 내용 확인 불가';
+            
+              report += `\n## ❌ 위험한 명령어 발견\n\n다음 위험한 명령어들이 발견되었습니다:\n\n${errors}\n**이러한 명령어는 프로덕션 데이터를 손실시킬 수 있으므로 절대 허용되지 않습니다.**\n`;
+            }
+            
+            // 마이그레이션 실패 시
+            if ('${{ steps.flyway_migrate.outputs.status }}' === 'failed') {
+              const fs = require('fs');
+              const errorLog = fs.existsSync('migration_error.txt')
+                ? fs.readFileSync('migration_error.txt', 'utf8')
+                : '상세 로그를 확인할 수 없습니다.';
+            
+              report += `\n${errorLog}\n`;
+            }
+            
+            // 성공 시
+            if ('${{ steps.flyway_migrate.outputs.status }}' === 'success') {
+              report += `\n## ✅ 검증 성공\n\n모든 마이그레이션 검증 로직이 정상 실행되었습니다.\n`;
+            }
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: report
+            });
+
+      - name: Close PR, if validation fail
+        if: failure()
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ github.TOKEN }}
+          script: |
+            const pull_number = ${{ github.event.pull_request.number }}
+            const updated_title = `[FLYWAY 검증 실패] ${{ github.event.pull_request.title }}`
+            
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pull_number,
+              body: 'Flyway 마이그레이션 검증에 실패했습니다. 위의 검증 결과를 확인하고 수정해주세요.',
+              event: 'REQUEST_CHANGES'
+            })
+            
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pull_number,
+              title: updated_title,
+              state: 'closed'
+            })
