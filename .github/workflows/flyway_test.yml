@@ -82,24 +82,28 @@ jobs:
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$SCHEMA_CHANGE_PATTERNS"; then
             echo "::warning::[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE)이 감지되었습니다. 애플리케이션 호환성을 반드시 확인하세요."
             cat changed_files.txt | xargs -r grep -iE "$SCHEMA_CHANGE_PATTERNS"
+            echo "review_warnings_found=true" >> $GITHUB_OUTPUT
           fi
 
           PERF_LOCK_PATTERNS="ALTER[[:space:]]+TABLE.*(ENGINE|CHARACTER[[:space:]]+SET)|(CREATE|DROP)[[:space:]]+INDEX"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$PERF_LOCK_PATTERNS"; then
             echo "::warning::[검토 필요] 인덱스 또는 테이블 속성 변경이 감지되었습니다. 대용량 테이블의 경우 서비스 중단(Lock)을 유발할 수 있습니다."
             cat changed_files.txt | xargs -r grep -iE "$PERF_LOCK_PATTERNS"
+            echo "review_warnings_found=true" >> $GITHUB_OUTPUT
           fi
 
           DB_LOGIC_PATTERNS="(CREATE|DROP)[[:space:]]+(TRIGGER|PROCEDURE|FUNCTION)|(CREATE|ALTER|DROP)[[:space:]]+VIEW|(ADD|DROP)[[:space:]]+CONSTRAINT"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$DB_LOGIC_PATTERNS"; then
             echo "::warning::[검토 필요] DB 로직(트리거, 프로시저, 뷰) 또는 제약조건 변경이 감지되었습니다. 숨겨진 부작용이 없는지 확인하세요."
             cat changed_files.txt | xargs -r grep -iE "$DB_LOGIC_PATTERNS"
+            echo "review_warnings_found=true" >> $GITHUB_OUTPUT
           fi
 
           DATA_CHANGE_PATTERNS="UPDATE[[:space:]]+\w+[[:space:]]+SET"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE"; then
             echo "::warning::[검토 필요] UPDATE 구문이 감지되었습니다. WHERE 절을 반드시 확인하여 의도치 않은 데이터 변경을 방지하세요."
             cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE"
+            echo "review_warnings_found=true" >> $GITHUB_OUTPUT
           fi
 
           # --- 최종 결과 처리 ---
@@ -251,7 +255,7 @@ jobs:
             
             | 검사 항목 | 결과 |
             |----------|------|
-            | 위험한 SQL 명령어 검사 | ${{ steps.static_analysis.outputs.forbidden_found == 'true' && '❌ 실패' || '✅ 통과' }} |
+            | 위험한 SQL 명령어 검사 | ${{ steps.static_analysis.outputs.forbidden_found == 'true' && '❌ 실패' || steps.static_analysis.outputs.review_warnings_found == 'true' && '⚠️ 경고' || '✅ 통과' }} |
             | 하위 호환성 검사 | ${{ steps.backward_compatibility_check.outcome == 'success' && '✅ 통과' || '❌ 실패' }} |
             | 마이그레이션 실행 테스트 | ${{ steps.flyway_migrate.outputs.status == 'success' && '✅ 통과' || steps.flyway_migrate.outputs.status == 'failed' && '❌ 실패' || '⏭️ 스킵' }} |
             `;
