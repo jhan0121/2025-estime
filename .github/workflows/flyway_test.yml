@@ -259,7 +259,7 @@ jobs:
             
             | 검사 항목 | 결과 |
             |----------|------|
-            | 위험한 SQL 명령어 검사 | ${{ steps.static_analysis.outputs.critical_found == 'true' && '❌ 실패' || '✅ 통과' }} |
+            | 위험한 SQL 명령어 검사 | ${{ steps.static_analysis.outputs.forbidden_found == 'true' && '❌ 실패' || '✅ 통과' }} |
             | 하위 호환성 검사 | ${{ steps.backward_compatibility_check.outcome == 'success' && '✅ 통과' || '❌ 실패' }} |
             | 마이그레이션 실행 테스트 | ${{ steps.flyway_migrate.outputs.status == 'success' && '✅ 통과' || steps.flyway_migrate.outputs.status == 'failed' && '❌ 실패' || '⏭️ 스킵' }} |
             `;
@@ -271,53 +271,48 @@ jobs:
                 ? fs.readFileSync('forbidden_errors.txt', 'utf8') 
                 : '';
             
-              let errorDetails = `
-## ❌ 위험한 명령어 발견
-
-다음 위험한 명령어들이 발견되었습니다:
-
-| 위험 레벨 | 사유 | 대상 쿼리 |
-|:---------|:-----|:----------|
-`;
-              if (errorsContent) {
-                errorsContent.split('\n').forEach(line => {
-                  if (line.trim()) {
-                    const match = line.match(/^- \[(.*?)\] (.*)$/);
-                    if (match) {
-                      const reason = match[1];
-                      const query = match[2];
-                      errorDetails += `| 금지 | ${reason} | ${query} |
-`;
-                    } else {
-                      errorDetails += `| 금지 | 알 수 없음 | ${line} |
-`;
-                    }
+            let errorDetails = `
+            ## ❌ 위험한 명령어 발견
+            
+            다음 위험한 명령어들이 발견되었습니다:
+            
+            | 위험 레벨 | 사유 | 대상 쿼리 |
+            |:---------|:-----|:----------|
+            `;
+            if (errorsContent) {
+              errorsContent.split('\n').forEach(line => {
+                if (line.trim()) {
+                  const match = line.match(/^- \[(.*?)\] (.*)$/);
+                  if (match) {
+                    const reason = match[1];
+                    const query = match[2];
+                    errorDetails += `| 금지 | ${reason} | ${query} |`;
+                  } else {
+                    errorDetails += `| 금지 | 알 수 없음 | ${line} |`;
                   }
-                });
-              } else {
-                errorDetails += `| 금지 | 상세 내용 확인 불가 | - |
-`;
-              }
-              report += errorDetails + `
-**이러한 명령어는 프로덕션 데이터를 손실시킬 수 있으므로 절대 허용되지 않습니다.**
-`;
+                }
+              });
+            } else {
+              errorDetails += `| 금지 | 상세 내용 확인 불가 | - |`;
             }
-
+            report += errorDetails + `**이러한 명령어는 프로덕션 데이터를 손실시킬 수 있으므로 절대 허용되지 않습니다.**`;
+            }
+            
             // 하위 호환성 문제 발견 시
-            if ('${{ steps.backward_compatibility_check.outcome }}' === 'failure' || fs.existsSync('compatibility_report.txt') && fs.readFileSync('compatibility_report.txt', 'utf8').trim() !== '') {
+            if ('${{ steps.backward_compatibility_check.outcome }}' === 'failure' || (fs.existsSync('compatibility_report.txt') && fs.readFileSync('compatibility_report.txt', 'utf8').trim() !== '')) {
               const fs = require('fs');
               const compatibilityContent = fs.existsSync('compatibility_report.txt') 
                 ? fs.readFileSync('compatibility_report.txt', 'utf8') 
                 : '';
             
               let compatibilityDetails = `
-## ⚠️ 하위 호환성 검사 상세
-
-다음 하위 호환성 문제/주의 사항이 발견되었습니다:
-
-| 위험 레벨 | 사유 | 대상 쿼리 |
-|:---------|:-----|:----------|
-`;
+              ## ⚠️ 하위 호환성 검사 상세
+            
+              다음 하위 호환성 문제/주의 사항이 발견되었습니다:
+            
+              | 위험 레벨 | 사유 | 대상 쿼리 |
+              |:---------|:-----|:----------|
+              `;
               if (compatibilityContent) {
                 compatibilityContent.split('\n').forEach(line => {
                   if (line.trim()) {
@@ -326,30 +321,26 @@ jobs:
                       const riskLevel = parts[0];
                       const reason = parts[1];
                       const query = parts[2];
-                      compatibilityDetails += `| ${riskLevel} | ${reason} | ${query} |
-`;
+                      compatibilityDetails += `| ${riskLevel} | ${reason} | ${query} |`;
                     } else {
-                      compatibilityDetails += `| 알 수 없음 | 알 수 없음 | ${line} |
-`;
+                      compatibilityDetails += `| 알 수 없음 | 알 수 없음 | ${line} |`;
                     }
                   }
                 });
               } else {
-                compatibilityDetails += `| 알 수 없음 | 상세 내용 확인 불가 | - |
-`;
+                compatibilityDetails += `| 알 수 없음 | 상세 내용 확인 불가 | - |`;
               }
-              report += compatibilityDetails + `
-`;
+              report += compatibilityDetails + ``;
             }
             
             // 마이그레이션 실패 시
             if ('${{ steps.flyway_migrate.outputs.status }}' === 'failed') {
-              const fs = require('fs');
-              const errorLog = fs.existsSync('migration_error.txt')
-                ? fs.readFileSync('migration_error.txt', 'utf8')
-                : '상세 로그를 확인할 수 없습니다.';
+            const fs = require('fs');
+            const errorLog = fs.existsSync('migration_error.txt')
+            ? fs.readFileSync('migration_error.txt', 'utf8')
+              : '상세 로그를 확인할 수 없습니다.';
             
-              report += `\n${errorLog}\n`;
+            report += `\n${errorLog}\n`;
             }
             
             // 성공 시
