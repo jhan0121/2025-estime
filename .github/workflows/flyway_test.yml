@@ -202,6 +202,10 @@ jobs:
           
           ./flyway-11.8.2/flyway migrate "-url=jdbc:mysql://127.0.0.1:3306/testdb?allowPublicKeyRetrieval=true&useSSL=false" "-user=${{ steps.create_user.outputs.flyway_user }}" "-password=${{ steps.create_user.outputs.flyway_password }}" "-locations=filesystem:application/src/main/resources/db/migration" "-connectRetries=10" > flyway_migration.log 2>&1
           
+          echo "------------------"
+          cat flyway_migration.log
+          echo "------------------"
+          
           EXIT_CODE=${PIPESTATUS[0]}
           
           if [ $EXIT_CODE -eq 0 ]; then
@@ -209,9 +213,6 @@ jobs:
             echo "status=success" >> $GITHUB_OUTPUT
           else
             echo "❌ 마이그레이션 실패"
-            echo "--- Flyway Log ---"
-            cat flyway_migration.log
-            echo "--------------------"
             echo "status=failed" >> $GITHUB_OUTPUT
             exit 1
           fi
