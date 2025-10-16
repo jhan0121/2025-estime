@@ -276,14 +276,14 @@ jobs:
                 header = '## ⚠️ 검토 필요 명령어';
               }
 
-              let errorDetails = `
-              ${header}
+            let errorDetails = `
+            ${header}
             
-              다음 위험한 명령어들이 발견되었습니다:
+            다음 위험한 명령어들이 발견되었습니다:
             
-              | 위험 레벨 | 사유 | 대상 쿼리 |
-              |:---------|:-----|:----------|
-              `;
+            | 위험 레벨 | 사유 | 대상 쿼리 |
+            |:---------|:-----|:----------|
+            `;
               if (errorsContent) {
                 errorsContent.split('\n').forEach(line => {
                   if (line.trim()) {
@@ -316,7 +316,7 @@ jobs:
               if (!errorsContent && !reviewWarningsContent) {
                 errorDetails += `| - | 상세 내용 확인 불가 | - |\n`;
               }
-              report += errorDetails + `**이러한 명령어는 프로덕션 데이터를 손실시킬 수 있으므로 절대 허용되지 않습니다.**`;
+              report += `\n` errorDetails + `**이러한 명령어는 프로덕션 데이터를 손실시킬 수 있으므로 절대 허용되지 않습니다.**\n`;
             }
             
             // 하위 호환성 문제 발견 시
