@@ -209,6 +209,9 @@ jobs:
             echo "status=success" >> $GITHUB_OUTPUT
           else
             echo "❌ 마이그레이션 실패"
+            echo "--- Flyway Log ---"
+            cat flyway_migration.log
+            echo "--------------------"
             echo "status=failed" >> $GITHUB_OUTPUT
             exit 1
           fi
