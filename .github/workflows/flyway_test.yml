@@ -326,14 +326,14 @@ jobs:
                 ? fs.readFileSync('compatibility_report.txt', 'utf8') 
                 : '';
             
-              let compatibilityDetails = `
-              ## ⚠️ 하위 호환성 검사 상세
+            let compatibilityDetails = `
+            ## ⚠️ 하위 호환성 검사 상세
             
-              다음 하위 호환성 문제/주의 사항이 발견되었습니다:
+            다음 하위 호환성 문제/주의 사항이 발견되었습니다:
             
-              | 위험 레벨 | 사유 | 대상 쿼리 |
-              |:---------|:-----|:----------|
-              `;
+            | 위험 레벨 | 사유 | 대상 쿼리 |
+            |:---------|:-----|:----------|
+            `;
               if (compatibilityContent) {
                 compatibilityContent.split('\n').forEach(line => {
                   if (line.trim()) {
