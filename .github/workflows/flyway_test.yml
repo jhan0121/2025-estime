@@ -159,7 +159,7 @@ jobs:
           fi
 
       - name: Flyway CLI 다운로드
-        if: steps.static_analysis.outputs.critical_found != 'true'
+        if: steps.get_changed_files.outputs.has_changed_files == 'true'
         run: |
           echo "Flyway CLI 다운로드 시작..."
           
@@ -167,10 +167,12 @@ jobs:
           tar -xzf flyway-commandline-11.8.2-linux-x64.tar.gz
           chmod +x flyway-11.8.2/flyway
           
+          echo "FLYWAY_PATH=./flyway-11.8.2" >> $GITHUB_ENV
           echo "Flyway CLI 다운로드 완료"
 
       - name: 테스트 유저 생성
         id: create_user
+        if: steps.get_changed_files.outputs.has_changed_files == 'true'
         run: |
           echo "테스트 유저 생성 시작..."
           
@@ -195,25 +197,21 @@ jobs:
 
       - name: Flyway CLI 기반 마이그레이션 검증 실행
         id: flyway_migrate
-        if: steps.static_analysis.outputs.forbidden_found != 'true'
+        if: steps.get_changed_files.outputs.has_changed_files == 'true'
         continue-on-error: true
         run: |
           echo "Flyway 마이그레이션 검증 실행 시작..."
           
-          ./flyway-11.8.2/flyway migrate "-url=jdbc:mysql://127.0.0.1:3306/testdb?allowPublicKeyRetrieval=true&useSSL=false" "-user=${{ steps.create_user.outputs.flyway_user }}" "-password=${{ steps.create_user.outputs.flyway_password }}" "-locations=filesystem:application/src/main/resources/db/migration" "-connectRetries=10" > flyway_migration.log 2>&1
-          
-          EXIT_CODE=$?
-          
-          if [ $EXIT_CODE -eq 0 ]; then
-            echo "✅ 마이그레이션 성공"
-            echo "status=success" >> $GITHUB_OUTPUT
-          else
+          if ! ${{ env.FLYWAY_PATH }}/flyway migrate "-url=jdbc:mysql://127.0.0.1:3306/testdb?allowPublicKeyRetrieval=true&useSSL=false" "-user=${{ steps.create_user.outputs.flyway_user }}" "-password=${{ steps.create_user.outputs.flyway_password }}" "-locations=filesystem:application/src/main/resources/db/migration" "-connectRetries=10" > flyway_migration.log 2>&1; then
             echo "❌ 마이그레이션 실패"
             echo "--- Flyway Log ---"
             cat flyway_migration.log
             echo "--------------------"
             echo "status=failed" >> $GITHUB_OUTPUT
             exit 1
+          else
+            echo "✅ 마이그레이션 성공"
+            echo "status=success" >> $GITHUB_OUTPUT
           fi
 
       - name: 마이그레이션 실패 원인 분석
