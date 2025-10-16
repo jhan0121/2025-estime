@@ -63,13 +63,13 @@ jobs:
           # --- 정책 1: '금지' 유형 검사 ---
           FORBIDDEN_PATTERNS="DROP[[:space:]]+(TABLE|DATABASE|COLUMN)|TRUNCATE[[:space:]]+TABLE"
 
-          if cat changed_files.txt | grep -v '^[[:space:]]*--' | xargs -r grep -qiE "$FORBIDDEN_PATTERNS"; then
+          if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$FORBIDDEN_PATTERNS"; then
             FORBIDDEN_FOUND=true
-            MESSAGES=$(cat changed_files.txt | xargs -r grep -iE "$FORBIDDEN_PATTERNS" | sed 's#^#- [DROP/TRUNCATE/DROP COLUMN] #')
+            MESSAGES=$(cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$FORBIDDEN_PATTERNS" | sed 's#^#- [DROP/TRUNCATE/DROP COLUMN] #')
             ERROR_MESSAGES+=("$MESSAGES")
           fi
 
-          DELETE_NO_WHERE=$(cat changed_files.txt | grep -v '^[[:space:]]*--' | xargs -r grep -iE "DELETE[[:space:]]+FROM" | grep -viE "WHERE" || true)
+          DELETE_NO_WHERE=$(cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "DELETE[[:space:]]+FROM" | grep -viE "WHERE" || true)
           if [[ -n "$DELETE_NO_WHERE" ]]; then
             FORBIDDEN_FOUND=true
             MESSAGES=$(echo "$DELETE_NO_WHERE" | sed 's#^#- [DELETE without WHERE] #')
@@ -80,25 +80,25 @@ jobs:
           echo "--- '검토' 유형 검사 시작 ---"
 
           SCHEMA_CHANGE_PATTERNS="ALTER[[:space:]]+TABLE.*(RENAME|MODIFY|CHANGE)"
-          if cat changed_files.txt | grep -v '^[[:space:]]*--' | xargs -r grep -qiE "$SCHEMA_CHANGE_PATTERNS"; then
+          if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$SCHEMA_CHANGE_PATTERNS"; then
             echo "::warning::[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE)이 감지되었습니다. 애플리케이션 호환성을 반드시 확인하세요."
             cat changed_files.txt | xargs -r grep -iE "$SCHEMA_CHANGE_PATTERNS"
           fi
 
           PERF_LOCK_PATTERNS="ALTER[[:space:]]+TABLE.*(ENGINE|CHARACTER[[:space:]]+SET)|(CREATE|DROP)[[:space:]]+INDEX"
-          if cat changed_files.txt | grep -v '^[[:space:]]*--' | xargs -r grep -qiE "$PERF_LOCK_PATTERNS"; then
+          if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$PERF_LOCK_PATTERNS"; then
             echo "::warning::[검토 필요] 인덱스 또는 테이블 속성 변경이 감지되었습니다. 대용량 테이블의 경우 서비스 중단(Lock)을 유발할 수 있습니다."
             cat changed_files.txt | xargs -r grep -iE "$PERF_LOCK_PATTERNS"
           fi
 
           DB_LOGIC_PATTERNS="(CREATE|DROP)[[:space:]]+(TRIGGER|PROCEDURE|FUNCTION)|(CREATE|ALTER|DROP)[[:space:]]+VIEW|(ADD|DROP)[[:space:]]+CONSTRAINT"
-          if cat changed_files.txt | grep -v '^[[:space:]]*--' | xargs -r grep -qiE "$DB_LOGIC_PATTERNS"; then
+          if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$DB_LOGIC_PATTERNS"; then
             echo "::warning::[검토 필요] DB 로직(트리거, 프로시저, 뷰) 또는 제약조건 변경이 감지되었습니다. 숨겨진 부작용이 없는지 확인하세요."
             cat changed_files.txt | xargs -r grep -iE "$DB_LOGIC_PATTERNS"
           fi
 
           DATA_CHANGE_PATTERNS="UPDATE[[:space:]]+\w+[[:space:]]+SET"
-          if cat changed_files.txt | grep -v '^[[:space:]]*--' | xargs -r grep -qiE "$DATA_CHANGE_PATTERNS"; then
+          if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$DATA_CHANGE_PATTERNS"; then
             echo "::warning::[검토 필요] UPDATE 구문이 감지되었습니다. WHERE 절을 반드시 확인하여 의도치 않은 데이터 변경을 방지하세요."
             cat changed_files.txt | xargs -r grep -iE "$DATA_CHANGE_PATTERNS"
           fi
@@ -127,21 +127,21 @@ jobs:
           > $COMPATIBILITY_REPORT_FILE # Clear the file at the start
 
           # ADD COLUMN NOT NULL without DEFAULT
-          ADD_NOT_NULL_NO_DEFAULT=$(cat changed_files.txt | grep -v '^[[:space:]]*--' | xargs -r grep -iE "ADD[[:space:]]+COLUMN.*NOT[[:space:]]+NULL" | grep -viE "DEFAULT" || true)
+          ADD_NOT_NULL_NO_DEFAULT=$(cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "ADD[[:space:]]+COLUMN.*NOT[[:space:]]+NULL" | grep -viE "DEFAULT" || true)
           if [[ -n "$ADD_NOT_NULL_NO_DEFAULT" ]]; then
             echo "ERROR | DEFAULT 값 없이 NOT NULL 컬럼 추가 | $ADD_NOT_NULL_NO_DEFAULT" >> $COMPATIBILITY_REPORT_FILE
             ERROR_FOUND=true
           fi
 
           # ALTER TABLE RENAME (table or column)
-          ALTER_RENAME=$(cat changed_files.txt | grep -v '^[[:space:]]*--' | xargs -r grep -iE "ALTER[[:space:]]+TABLE.*RENAME" || true)
+          ALTER_RENAME=$(cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "ALTER[[:space:]]+TABLE.*RENAME" || true)
           if [[ -n "$ALTER_RENAME" ]]; then
             echo "ERROR | 테이블/컬럼명 변경(RENAME) | $ALTER_RENAME" >> $COMPATIBILITY_REPORT_FILE
             ERROR_FOUND=true
           fi
 
           # ALTER COLUMN DROP DEFAULT
-          ALTER_DROP_DEFAULT=$(cat changed_files.txt | grep -v '^[[:space:]]*--' | xargs -r grep -iE "ALTER[[:space:]]+COLUMN.*DROP[[:space:]]+DEFAULT" || true)
+          ALTER_DROP_DEFAULT=$(cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "ALTER[[:space:]]+COLUMN.*DROP[[:space:]]+DEFAULT" || true)
           if [[ -n "$ALTER_DROP_DEFAULT" ]]; then
             echo "WARNING | 컬럼 DEFAULT 값 삭제 | $ALTER_DROP_DEFAULT" >> $COMPATIBILITY_REPORT_FILE
           fi
