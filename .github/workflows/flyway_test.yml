@@ -65,14 +65,14 @@ jobs:
 
           if cat changed_files.txt | xargs -r grep -qiE "$FORBIDDEN_PATTERNS"; then
             FORBIDDEN_FOUND=true
-            MESSAGES=$(cat changed_files.txt | xargs -r grep -iE "$FORBIDDEN_PATTERNS" | sed 's/^/- [DROP/TRUNCATE/DROP COLUMN] /')
+            MESSAGES=$(cat changed_files.txt | xargs -r grep -iE "$FORBIDDEN_PATTERNS" | sed 's#^#- [DROP/TRUNCATE/DROP COLUMN] #')
             ERROR_MESSAGES+=("$MESSAGES")
           fi
 
           DELETE_NO_WHERE=$(cat changed_files.txt | xargs -r grep -iE "DELETE[[:space:]]+FROM" | grep -viE "WHERE" || true)
           if [[ -n "$DELETE_NO_WHERE" ]]; then
             FORBIDDEN_FOUND=true
-            MESSAGES=$(echo "$DELETE_NO_WHERE" | sed 's/^/- [DELETE without WHERE] /')
+            MESSAGES=$(echo "$DELETE_NO_WHERE" | sed 's#^#- [DELETE without WHERE] #')
             ERROR_MESSAGES+=("$MESSAGES")
           fi
 
@@ -253,6 +253,7 @@ jobs:
         with:
           github-token: ${{ github.TOKEN }}
           script: |
+            const fs = require('fs');
             let report = `# Flyway 마이그레이션 검증 결과
             
             ## 검증 항목
