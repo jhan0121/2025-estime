@@ -20,13 +20,13 @@ DELETE FROM test_table WHERE id = 1;
 
 
 -- --- 검토 필요 SQL 명령어 (Review Warnings - Static Analysis Warning) ---
--- ALTER TABLE test_table RENAME COLUMN name TO full_name;
--- ALTER TABLE test_table MODIFY COLUMN id BIGINT;
--- CREATE INDEX idx_name ON test_table (name);
--- DROP INDEX idx_name ON test_table;
--- CREATE VIEW success_view AS SELECT id, name FROM test_table;
--- ALTER TABLE test_table ADD CONSTRAINT unique_name UNIQUE (name);
--- UPDATE test_table SET name = 'All Names'; -- UPDATE without WHERE clause
+ALTER TABLE test_table RENAME COLUMN name TO full_name;
+ALTER TABLE test_table MODIFY COLUMN id BIGINT;
+CREATE INDEX idx_name ON test_table (name);
+DROP INDEX idx_name ON test_table;
+CREATE VIEW success_view AS SELECT id, name FROM test_table;
+ALTER TABLE test_table ADD CONSTRAINT unique_name UNIQUE (name);
+UPDATE test_table SET name = 'All Names'; -- UPDATE without WHERE clause
 
 
 -- --- 하위 호환성 위반 (Backward Compatibility Errors) ---
@@ -35,4 +35,4 @@ DELETE FROM test_table WHERE id = 1;
 
 
 -- --- 하위 호환성 주의 (Backward Compatibility Warnings) ---
--- ALTER TABLE test_table ALTER COLUMN new_column DROP DEFAULT; -- ALTER COLUMN DROP DEFAULT
+ALTER TABLE test_table ALTER COLUMN new_column DROP DEFAULT; -- ALTER COLUMN DROP DEFAULT
