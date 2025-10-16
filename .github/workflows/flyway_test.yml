@@ -60,7 +60,7 @@ jobs:
           FORBIDDEN_FOUND=false
           ERROR_MESSAGES=()
 
-          # --- 정책 1: '금지' 유형 검사 ---
+          echo "--- '금지' 유형 검사 ---"
           FORBIDDEN_PATTERNS="DROP[[:space:]]+(TABLE|DATABASE|COLUMN)|TRUNCATE[[:space:]]+TABLE"
 
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$FORBIDDEN_PATTERNS"; then
@@ -76,8 +76,7 @@ jobs:
             ERROR_MESSAGES+=("$MESSAGES")
           fi
 
-          # --- 정책 2: '검토' 유형 검사 (유형별 분리) ---
-          echo "--- '검토' 유형 검사 시작 ---"
+          echo "--- '검토' 유형 검사 ---"
 
           SCHEMA_CHANGE_PATTERNS="ALTER[[:space:]]+TABLE.*(RENAME|MODIFY|CHANGE)"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$SCHEMA_CHANGE_PATTERNS"; then
@@ -113,7 +112,7 @@ jobs:
             cat forbidden_errors.txt
             exit 1
           else
-            echo "위험한 명령어 미발견"
+            echo "위험/검토 명령어 미발견"
             echo "forbidden_found=false" >> $GITHUB_OUTPUT
           fi
 
@@ -167,7 +166,6 @@ jobs:
       - name: 테스트 유저 생성
         id: create_user
         run: |
-          # root/testpw: DB 컨테이너의 관리자. 테스트 유저 생성을 위해 단 한번 사용
           echo "테스트 유저 생성 시작..."
           
           FLYWAY_USER="test_api_user"
@@ -195,6 +193,8 @@ jobs:
         continue-on-error: true
         run: |
           echo "Flyway 마이그레이션 검증 실행 시작..."
+          echo "Flyway User: ${{ steps.create_user.outputs.flyway_user }}"
+          echo "Flyway Password: ${{ steps.create_user.outputs.flyway_password }}"
           
           bash -c "./flyway-11.8.2/flyway migrate -url=jdbc:mysql://127.0.0.1:3306/testdb?allowPublicKeyRetrieval=true&useSSL=false -user=${{ steps.create_user.outputs.flyway_user }} -password=${{ steps.create_user.outputs.flyway_password }} -locations=filesystem:application/src/main/resources/db/migration -connectRetries=10 > flyway_migration.log 2>&1"
           
