@@ -12,6 +12,8 @@ services:
       - "127.0.0.1:3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
+    networks:
+      - monitor_net
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
@@ -36,10 +38,6 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
 
   api-green:
     container_name: estime-api-green
@@ -58,10 +56,6 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
 
   alloy:
     image: grafana/alloy:v1.11.0
