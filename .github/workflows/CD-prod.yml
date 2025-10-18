@@ -112,6 +112,8 @@ jobs:
           cat <<EOF > .env
           IMAGE_NAME=${{ secrets.PROD_IMAGE_NAME }}
           IMAGE_TAG=${{ needs.build-and-push.outputs.version }}
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
           EOF
 
       - name: Create env file for env.prod file
@@ -372,6 +374,8 @@ jobs:
           cat <<EOF > .env
           IMAGE_NAME=${{ secrets.PROD_IMAGE_NAME }}
           IMAGE_TAG=${{ needs.build-and-push.outputs.version }}
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
           EOF
 
       - name: Rollback to previous environment
