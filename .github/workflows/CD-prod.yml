@@ -93,7 +93,7 @@ jobs:
             ${{ secrets.PROD_IMAGE_NAME }}:latest
 
   deploy:
-    runs-on: [ self-hosted, estime-prod ]
+    runs-on: [ self-hosted, test ]
     needs: build-and-push
 
     outputs:
@@ -359,7 +359,7 @@ jobs:
           docker builder prune -a -f
 
   rollback:
-    runs-on: [ self-hosted, estime-prod ]
+    runs-on: [ self-hosted, test ]
     needs: [ build-and-push, deploy ]
     if: failure() && needs.deploy.outputs.current != 'none'
 
