@@ -37,9 +37,9 @@ jobs:
         id: check_changed_files
         run: |
           echo "변경된 Flyway 마이그레이션 파일 목록 탐색 시작..."
-          
+
           git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} -- 'application/src/main/resources/db/migration/**.sql' \
-            | grep -E '/(V|R)[0-9_.]+__.*\.sql$' > changed_files.txt
+            | grep -E '/(V|R)[0-9_.]+__.*\.sql$' > changed_files.txt || true
 
           if [ ! -s changed_files.txt ]; then
             echo "변경된 Flyway 마이그레이션 파일 부재. 정적 분석 종료."
@@ -59,8 +59,9 @@ jobs:
 
           FORBIDDEN_FOUND=false
           REVIEW_FOUND=false
-          ERROR_MESSAGES=()
+          FORBIDDEN_ERRORS_FILE="forbidden_errors.txt"
           WARNING_DETAILS_FILE="warning_details.txt"
+          > $FORBIDDEN_ERRORS_FILE # Clear the file at the start
           > $WARNING_DETAILS_FILE # Clear the file at the start
 
           echo "--- '금지' 유형 검사 ---"
@@ -68,15 +69,13 @@ jobs:
 
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$FORBIDDEN_PATTERNS"; then
             FORBIDDEN_FOUND=true
-            MESSAGES=$(cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$FORBIDDEN_PATTERNS" | sed 's#^#- [DROP/TRUNCATE/DROP COLUMN] #')
-            ERROR_MESSAGES+=("$MESSAGES")
+            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$FORBIDDEN_PATTERNS" | sed 's#^#- [DROP/TRUNCATE/DROP COLUMN] #' >> $FORBIDDEN_ERRORS_FILE
           fi
 
           DELETE_NO_WHERE=$(cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "DELETE[[:space:]]+FROM" | grep -viE "WHERE" || true)
           if [[ -n "$DELETE_NO_WHERE" ]]; then
             FORBIDDEN_FOUND=true
-            MESSAGES=$(echo "$DELETE_NO_WHERE" | sed 's#^#- [DELETE without WHERE] #')
-            ERROR_MESSAGES+=("$MESSAGES")
+            echo "$DELETE_NO_WHERE" | sed 's#^#- [DELETE without WHERE] #' >> $FORBIDDEN_ERRORS_FILE
           fi
 
           echo "--- '검토' 유형 검사 ---"
@@ -117,10 +116,9 @@ jobs:
           if [ "$FORBIDDEN_FOUND" = true ]; then
             echo "::error::Flyway 스크립트 내 '금지' 유형 SQL 명령어 감지"
             echo "forbidden_found=true" >> $GITHUB_OUTPUT
-          
-            printf "%s\n" "${ERROR_MESSAGES[@]}" > forbidden_errors.txt
-          
-            cat forbidden_errors.txt
+
+            echo "Flyway 스크립트 내 '금지' 유형 SQL 명령어 감지"
+            cat $FORBIDDEN_ERRORS_FILE
             exit 1
           else
             echo "forbidden_found=false" >> $GITHUB_OUTPUT
