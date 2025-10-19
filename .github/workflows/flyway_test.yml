@@ -66,10 +66,51 @@ jobs:
 
           # 정적 검사 패턴
           FORBIDDEN_PATTERNS="DROP[[:space:]]+(TABLE|DATABASE|SCHEMA)|ALTER[[:space:]]+TABLE.*DROP[[:space:]]+COLUMN|TRUNCATE[[:space:]]+TABLE"
+          DELETE_PATTERN="DELETE[[:space:]]+FROM"
           SCHEMA_CHANGE_PATTERNS="ALTER[[:space:]]+TABLE[[:space:]]+[a-zA-Z0-9_\`]+[[:space:]]+((RENAME[[:space:]]+TO)|(MODIFY[[:space:]]+COLUMN)|(CHANGE[[:space:]]+COLUMN))"
-          PERF_LOCK_PATTERNS="ALTER[[:space:]]+TABLE.*(ENGINE|CHARACTER[[:space:]]+SET|CHARSET|COLLATE)|(CREATE|DROP)[[:space:]]+INDEX"
+          INDEX_TABLE_CHANGE_PATTERNS="ALTER[[:space:]]+TABLE.*(ENGINE|CHARACTER[[:space:]]+SET|CHARSET|COLLATE)|(CREATE|DROP)[[:space:]]+INDEX"
           DB_CONSTRAINT_PATTERNS="(CREATE|ALTER|DROP)[[:space:]]+VIEW|(ADD|DROP)[[:space:]]+CONSTRAINT"
           DATA_CHANGE_PATTERNS="UPDATE[[:space:]]+[a-zA-Z0-9_]+[[:space:]]+SET"
+
+          # 금지 유형 검사 함수
+          check_forbidden_pattern() {
+            local pattern="$1"
+            local reason="$2"
+            local exclude_pattern="$3" # 선택적 파라미터
+
+            local matched
+            if [[ -n "$exclude_pattern" ]]; then
+              matched=$(echo "$SQL_CONTENT" | grep -iE "$pattern" | grep -viE "$exclude_pattern" || true)
+            else
+              matched=$(echo "$SQL_CONTENT" | grep -iE "$pattern" || true)
+            fi
+
+            if [[ -n "$matched" ]]; then
+              FORBIDDEN_FOUND=true
+              echo "$matched" | sed "s#^#❌ 금지|$reason|$filename|#" >> $FORBIDDEN_ERRORS_FILE
+            fi
+          }
+
+          # 검토 유형 검사 함수
+          check_review_pattern() {
+            local pattern="$1"
+            local reason="$2"
+            local warning_message="$3"
+            local exclude_pattern="$4" # 선택적 파라미터
+
+            local matched
+            if [[ -n "$exclude_pattern" ]]; then
+              matched=$(echo "$SQL_CONTENT" | grep -iE "$pattern" | grep -viE "$exclude_pattern" || true)
+            else
+              matched=$(echo "$SQL_CONTENT" | grep -iE "$pattern" || true)
+            fi
+
+            if [[ -n "$matched" ]]; then
+              echo "::warning file=$file::$warning_message"
+              echo "$matched" | sed "s#^#⚠️ 검토|$reason|$filename|#" >> $WARNING_DETAILS_FILE
+              REVIEW_FOUND=true
+            fi
+          }
 
           echo "파일별 SQL 검증 시작..."
 
@@ -83,41 +124,14 @@ jobs:
             SQL_CONTENT=$(grep -v '^[[:space:]]*--' "$file" || true)
 
             # --- '금지' 유형 검사 ---
-            if echo "$SQL_CONTENT" | grep -qiE "$FORBIDDEN_PATTERNS"; then
-              FORBIDDEN_FOUND=true
-              echo "$SQL_CONTENT" | grep -iE "$FORBIDDEN_PATTERNS" | sed "s#^#❌ 금지|DROP/TRUNCATE/DROP COLUMN|$filename|#" >> $FORBIDDEN_ERRORS_FILE
-            fi
-
-            DELETE_NO_WHERE=$(echo "$SQL_CONTENT" | grep -iE "DELETE[[:space:]]+FROM" | grep -viE "WHERE" || true)
-            if [[ -n "$DELETE_NO_WHERE" ]]; then
-              FORBIDDEN_FOUND=true
-              echo "$DELETE_NO_WHERE" | sed "s#^#❌ 금지|DELETE without WHERE|$filename|#" >> $FORBIDDEN_ERRORS_FILE
-            fi
+            check_forbidden_pattern "$FORBIDDEN_PATTERNS" "DROP/TRUNCATE/DROP COLUMN"
+            check_forbidden_pattern "$DELETE_PATTERN" "DELETE without WHERE" "WHERE"
 
             # --- '검토' 유형 검사 ---
-            if echo "$SQL_CONTENT" | grep -qiE "$SCHEMA_CHANGE_PATTERNS"; then
-              echo "::warning file=$file::[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE) 감지"
-              echo "$SQL_CONTENT" | grep -iE "$SCHEMA_CHANGE_PATTERNS" | sed "s#^#⚠️ 검토|스키마 구조 변경|$filename|#" >> $WARNING_DETAILS_FILE
-              REVIEW_FOUND=true
-            fi
-
-            if echo "$SQL_CONTENT" | grep -qiE "$PERF_LOCK_PATTERNS"; then
-              echo "::warning file=$file::[검토 필요] 인덱스/테이블 속성 변경 감지"
-              echo "$SQL_CONTENT" | grep -iE "$PERF_LOCK_PATTERNS" | sed "s#^#⚠️ 검토|인덱스/테이블 속성 변경|$filename|#" >> $WARNING_DETAILS_FILE
-              REVIEW_FOUND=true
-            fi
-
-            if echo "$SQL_CONTENT" | grep -qiE "$DB_CONSTRAINT_PATTERNS"; then
-              echo "::warning file=$file::[검토 필요] DB 제약조건 변경 감지"
-              echo "$SQL_CONTENT" | grep -iE "$DB_CONSTRAINT_PATTERNS" | sed "s#^#⚠️ 검토|DB 제약조건 변경|$filename|#" >> $WARNING_DETAILS_FILE
-              REVIEW_FOUND=true
-            fi
-
-            if echo "$SQL_CONTENT" | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE" > /dev/null 2>&1; then
-              echo "::warning file=$file::[검토 필요] UPDATE 구문 WHERE 절 확인 필요"
-              echo "$SQL_CONTENT" | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE" | sed "s#^#⚠️ 검토|UPDATE WHERE 절 확인|$filename|#" >> $WARNING_DETAILS_FILE
-              REVIEW_FOUND=true
-            fi
+            check_review_pattern "$SCHEMA_CHANGE_PATTERNS" "스키마 구조 변경" "[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE) 감지"
+            check_review_pattern "$INDEX_TABLE_CHANGE_PATTERNS" "인덱스/테이블 속성 변경" "[검토 필요] 인덱스/테이블 속성 변경 감지"
+            check_review_pattern "$DB_CONSTRAINT_PATTERNS" "DB 제약조건 변경" "[검토 필요] DB 제약조건 변경 감지"
+            check_review_pattern "$DATA_CHANGE_PATTERNS" "UPDATE WHERE 절 확인" "[검토 필요] UPDATE 구문 WHERE 절 확인 필요" "WHERE"
           done < changed_files.txt
 
           # 최종 output 설정
