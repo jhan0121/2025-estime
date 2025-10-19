@@ -262,8 +262,8 @@ jobs:
               let errorDetails = `
               ${header}
 
-              | 위험 레벨 | 사유 | 파일 | 대상 SQL |
-              |:---------|:-----|:-----|:----------|
+              | 레벨 | 사유 | 파일 | 대상 SQL |
+              |:-----|:-----|:-----|:----------|
               `;
 
               // 금지 유형 SQL 처리
@@ -272,13 +272,13 @@ jobs:
                   if (line.trim()) {
                     const parts = line.split('|');
                     if (parts.length >= 4) {
-                      const riskLevel = parts[0].trim();
+                      const riskLevel = parts[0].trim().replace(/ /g, '&nbsp;'); // 공백을 non-breaking space로 변환
                       const reason = parts[1].trim();
                       const fileName = parts[2].trim();
                       const query = parts[3].trim().replace(/\r/g, '');
-                      errorDetails += `| \`${riskLevel}\` | ${reason} | \`${fileName}\` | \`${query}\` |\n`;
+                      errorDetails += `| ${riskLevel} | ${reason} | \`${fileName}\` | \`${query}\` |\n`;
                     } else {
-                      errorDetails += `| \`❌ 금지\` | 파싱 실패 | - | ${line} |\n`;
+                      errorDetails += `| ❌&nbsp;금지 | 파싱 실패 | - | ${line} |\n`;
                     }
                   }
                 });
@@ -290,13 +290,13 @@ jobs:
                   if (line.trim()) {
                     const parts = line.split('|');
                     if (parts.length >= 4) {
-                      const riskLevel = parts[0].trim();
+                      const riskLevel = parts[0].trim().replace(/ /g, '&nbsp;'); // 공백을 non-breaking space로 변환
                       const reason = parts[1].trim();
                       const fileName = parts[2].trim();
                       const query = parts[3].trim().replace(/\r/g, '');
-                      errorDetails += `| \`${riskLevel}\` | ${reason} | \`${fileName}\` | \`${query}\` |\n`;
+                      errorDetails += `| ${riskLevel} | ${reason} | \`${fileName}\` | \`${query}\` |\n`;
                     } else {
-                      errorDetails += `| \`⚠️ 검토\` | 파싱 실패 | - | ${line} |\n`;
+                      errorDetails += `| ⚠️&nbsp;검토 | 파싱 실패 | - | ${line} |\n`;
                     }
                   }
                 });
