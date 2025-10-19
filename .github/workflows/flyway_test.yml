@@ -245,104 +245,15 @@ jobs:
       - name: 검증 결과 코멘트 작성
         if: always()
         uses: actions/github-script@v8
+        env:
+          FORBIDDEN_FOUND: ${{ steps.static_analysis.outputs.forbidden_found }}
+          REVIEW_FOUND: ${{ steps.static_analysis.outputs.review_warnings_found }}
+          MIGRATE_STATUS: ${{ steps.flyway_migrate.outputs.status }}
         with:
           github-token: ${{ github.TOKEN }}
           script: |
-            const fs = require('fs');
-            let report = `# Flyway 마이그레이션 검증 결과
-            
-            ## 검증 항목
-            
-            | 검증 유형 | 결과 |
-            |----------|------|
-            | 위험 SQL 탐색 | ${{ steps.static_analysis.outputs.forbidden_found == 'true' && '❌ 위험' || steps.static_analysis.outputs.review_warnings_found == 'true' && '⚠️ 검토' || '✅ 통과' }} |
-            | 마이그레이션 실행 | ${{ steps.flyway_migrate.outputs.status == 'success' && '✅ 성공' || steps.flyway_migrate.outputs.status == 'failed' && '❌ 실패' || '⏭️ 스킵' }} |
-            `;
-            
-            // 위험 SQL 발견 시
-            if ('${{ steps.static_analysis.outputs.forbidden_found }}' === 'true' || '${{ steps.static_analysis.outputs.review_warnings_found }}' === 'true') {
-              const errorsContent = fs.existsSync('forbidden_errors.txt') 
-                ? fs.readFileSync('forbidden_errors.txt', 'utf8') 
-                : '';
-              const warningsContent = fs.existsSync('warning_details.txt') 
-                ? fs.readFileSync('warning_details.txt', 'utf8') 
-                : '';
-
-              let header = '## ❌ 위험 단계 SQL 탐지';
-              if ('${{ steps.static_analysis.outputs.forbidden_found }}' !== 'true' && '${{ steps.static_analysis.outputs.review_warnings_found }}' === 'true') {
-                header = '## ⚠️ 검토 단계 SQL 탐지';
-              }
-
-              let errorDetails = `
-              ${header}
-
-              | 위험 LEVEL | 사유 | 파일 | 대상 SQL |
-              |:----------|:-----|:----|:--------|
-              `;
-
-              // 금지 유형 SQL 처리
-              if (errorsContent) {
-                errorsContent.split('\n').forEach(line => {
-                  if (line.trim()) {
-                    const parts = line.split('|');
-                    if (parts.length >= 4) {
-                      const riskLevel = parts[0].trim().replace(/ /g, '&nbsp;'); // 공백을 non-breaking space로 변환
-                      const reason = parts[1].trim();
-                      const fileName = parts[2].trim();
-                      const query = parts[3].trim().replace(/\r/g, '');
-                      errorDetails += `| ${riskLevel} | ${reason} | \`${fileName}\` | \`${query}\` |\n`;
-                    } else {
-                      errorDetails += `| ❌&nbsp;금지 | 파싱 실패 | - | ${line} |\n`;
-                    }
-                  }
-                });
-              }
-
-              // 검토 유형 SQL 처리
-              if (warningsContent) {
-                warningsContent.split('\n').forEach(line => {
-                  if (line.trim()) {
-                    const parts = line.split('|');
-                    if (parts.length >= 4) {
-                      const riskLevel = parts[0].trim().replace(/ /g, '&nbsp;'); // 공백을 non-breaking space로 변환
-                      const reason = parts[1].trim();
-                      const fileName = parts[2].trim();
-                      const query = parts[3].trim().replace(/\r/g, '');
-                      errorDetails += `| ${riskLevel} | ${reason} | \`${fileName}\` | \`${query}\` |\n`;
-                    } else {
-                      errorDetails += `| ⚠️&nbsp;검토 | 파싱 실패 | - | ${line} |\n`;
-                    }
-                  }
-                });
-              }
-
-              if (!errorsContent && !warningsContent) {
-                errorDetails += `| - | - | - | 상세 내용 확인 불가 |\n`;
-              }
-              report += `\n${errorDetails}\n**이러한 SQL은 프로덕션 데이터를 손실시킬 가능성이 매우 높으므로 수정 필요**\n`;
-            }
-            
-            // 마이그레이션 실패 시
-            if ('${{ steps.flyway_migrate.outputs.status }}' === 'failed') {
-            const fs = require('fs');
-            const errorLog = fs.existsSync('migration_error.txt')
-            ? fs.readFileSync('migration_error.txt', 'utf8')
-              : '상세 로그 확인 불가';
-            
-            report += `\n${errorLog}\n`;
-            }
-            
-            // 성공 시
-            if ('${{ steps.flyway_migrate.outputs.status }}' === 'success') {
-              report += `\n## ✅ 검증 성공\n\n모든 마이그레이션 검증 로직 정상 실행\n`;
-            }
-            
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: report
-            });
+            const script = require('./.github/scripts/generate-flyway-report.js');
+            await script({ github, context, core });
 
       - name: Request changes if validation fail
         if: failure()
