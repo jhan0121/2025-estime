@@ -134,16 +134,16 @@ CREATE TABLE test_table (
 -- ===================================================
 
 -- 대소문자 혼합
-DrOp TaBlE test_case_mixed_example;
+-- DrOp TaBlE test_case_mixed_example;
 
 -- 여러 공백
-DROP     TABLE     test_spaces_example;
+-- DROP     TABLE     test_spaces_example;
 
 -- 탭 포함
-DROP	TABLE	test_tab_example;
+-- DROP	TABLE	test_tab_example;
 
 -- UPDATE without WHERE (대소문자 혼합)
-UpDaTe test_table SeT name = 'Edge Case Update';
+-- UpDaTe test_table SeT name = 'Edge Case Update';
 
 
 -- ===================================================
@@ -186,4 +186,4 @@ UpDaTe test_table SeT name = 'Edge Case Update';
 -- SELCT * FROM test_table;
 
 -- --- 11. 권한 부족 (테스트 유저는 SUPER 권한 없음) ---
--- SET GLOBAL max_connections = 200;
+SET GLOBAL max_connections = 200;
