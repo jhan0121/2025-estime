@@ -243,9 +243,9 @@ jobs:
                 ? fs.readFileSync('warning_details.txt', 'utf8') 
                 : '';
 
-              let header = '## ❌ `위험` 단계 SQL 탐지';
+              let header = '## ❌ 위험 단계 SQL 탐지';
               if ('${{ steps.static_analysis.outputs.forbidden_found }}' !== 'true' && '${{ steps.static_analysis.outputs.review_warnings_found }}' === 'true') {
-                header = '## ⚠️ `검토` 단계 SQL 탐지';
+                header = '## ⚠️ 검토 단계 SQL 탐지';
               }
 
               let errorDetails = `
