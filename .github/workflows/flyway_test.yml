@@ -64,56 +64,65 @@ jobs:
           > $FORBIDDEN_ERRORS_FILE # Clear the file at the start
           > $WARNING_DETAILS_FILE # Clear the file at the start
 
-          # SQL 파일 내용을 한 번만 읽어서 변수에 저장 (주석 제외)
-          echo "SQL 파일 내용 로드 중..."
-          SQL_CONTENT=$(cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--')
-
-          echo "--- '금지' 유형 검사 ---"
-          FORBIDDEN_PATTERNS="DROP[[:space:]]+(TABLE|DATABASE|COLUMN)|TRUNCATE[[:space:]]+TABLE"
-
-          if echo "$SQL_CONTENT" | grep -qiE "$FORBIDDEN_PATTERNS"; then
-            FORBIDDEN_FOUND=true
-            echo "$SQL_CONTENT" | grep -iE "$FORBIDDEN_PATTERNS" | sed 's#^#- [DROP/TRUNCATE/DROP COLUMN] #' >> $FORBIDDEN_ERRORS_FILE
-          fi
-
-          DELETE_NO_WHERE=$(echo "$SQL_CONTENT" | grep -iE "DELETE[[:space:]]+FROM" | grep -viE "WHERE" || true)
-          if [[ -n "$DELETE_NO_WHERE" ]]; then
-            FORBIDDEN_FOUND=true
-            echo "$DELETE_NO_WHERE" | sed 's#^#- [DELETE without WHERE] #' >> $FORBIDDEN_ERRORS_FILE
-          fi
-
-          echo "--- '검토' 유형 검사 ---"
-
-          SCHEMA_CHANGE_PATTERNS="ALTER[[:space:]]+TABLE.*(RENAME|MODIFY|CHANGE)"
-          if echo "$SQL_CONTENT" | grep -qiE "$SCHEMA_CHANGE_PATTERNS"; then
-            echo "::warning::[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE) 감지. 애플리케이션 호환성 확인 필요"
-            echo "$SQL_CONTENT" | grep -iE "$SCHEMA_CHANGE_PATTERNS" | sed 's#^# ⚠️ 검토 | 스키마 구조 변경 | #' >> $WARNING_DETAILS_FILE
-            echo "review_warnings_found=true" >> $GITHUB_OUTPUT
-            REVIEW_FOUND=true
-          fi
-
-          PERF_LOCK_PATTERNS="ALTER[[:space:]]+TABLE.*(ENGINE|CHARACTER[[:space:]]+SET)|(CREATE|DROP)[[:space:]]+INDEX"
-          if echo "$SQL_CONTENT" | grep -qiE "$PERF_LOCK_PATTERNS"; then
-            echo "::warning::[검토 필요] 인덱스 또는 테이블 속성 변경 감지. 대용량 테이블의 경우 서비스 중단을 유발할 가능성 존재"
-            echo "$SQL_CONTENT" | grep -iE "$PERF_LOCK_PATTERNS" | sed 's#^# ⚠️ 검토 | 인덱스/테이블 속성 변경 | #' >> $WARNING_DETAILS_FILE
-            echo "review_warnings_found=true" >> $GITHUB_OUTPUT
-            REVIEW_FOUND=true
-          fi
-
-          DB_LOGIC_PATTERNS="(CREATE|ALTER|DROP)[[:space:]]+VIEW|(ADD|DROP)[[:space:]]+CONSTRAINT"
-          if echo "$SQL_CONTENT" | grep -qiE "$DB_LOGIC_PATTERNS"; then
-            echo "::warning::[검토 필요] DB 제약조건 변경 감지. 숨겨진 부작용 존재 여부 확인 필요"
-            echo "$SQL_CONTENT" | grep -iE "$DB_LOGIC_PATTERNS" | sed 's#^# ⚠️ 검토 | DB 제약조건 변경 | #' >> $WARNING_DETAILS_FILE
-            echo "review_warnings_found=true" >> $GITHUB_OUTPUT
-            REVIEW_FOUND=true
-          fi
-
+          # 정적 검사 패턴
+          FORBIDDEN_PATTERNS="DROP[[:space:]]+(TABLE|DATABASE|SCHEMA)|ALTER[[:space:]]+TABLE.*DROP[[:space:]]+COLUMN|TRUNCATE[[:space:]]+TABLE"
+          SCHEMA_CHANGE_PATTERNS="ALTER[[:space:]]+TABLE[[:space:]]+[a-zA-Z0-9_\`]+[[:space:]]+((RENAME[[:space:]]+TO)|(MODIFY[[:space:]]+COLUMN)|(CHANGE[[:space:]]+COLUMN))"
+          PERF_LOCK_PATTERNS="ALTER[[:space:]]+TABLE.*(ENGINE|CHARACTER[[:space:]]+SET|CHARSET|COLLATE)|(CREATE|DROP)[[:space:]]+INDEX"
+          DB_CONSTRAINT_PATTERNS="(CREATE|ALTER|DROP)[[:space:]]+VIEW|(ADD|DROP)[[:space:]]+CONSTRAINT"
           DATA_CHANGE_PATTERNS="UPDATE[[:space:]]+[a-zA-Z0-9_]+[[:space:]]+SET"
-          if echo "$SQL_CONTENT" | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE"; then
-            echo "::warning::[검토 필요] UPDATE 구문 감지. WHERE 절 존재 여부 확인 필요"
-            echo "$SQL_CONTENT" | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE" | sed 's#^#WARNING | UPDATE WHERE 절 확인 | #' >> $WARNING_DETAILS_FILE
+
+          echo "파일별 SQL 검증 시작..."
+
+          while IFS= read -r file; do
+            echo "검사 중: $file"
+
+            # 파일명 추출
+            filename=$(basename "$file")
+
+            # 주석 제외 SQL 내용 읽기
+            SQL_CONTENT=$(grep -v '^[[:space:]]*--' "$file" || true)
+
+            # --- '금지' 유형 검사 ---
+            if echo "$SQL_CONTENT" | grep -qiE "$FORBIDDEN_PATTERNS"; then
+              FORBIDDEN_FOUND=true
+              echo "$SQL_CONTENT" | grep -iE "$FORBIDDEN_PATTERNS" | sed "s#^#❌ 금지|DROP/TRUNCATE/DROP COLUMN|$filename|#" >> $FORBIDDEN_ERRORS_FILE
+            fi
+
+            DELETE_NO_WHERE=$(echo "$SQL_CONTENT" | grep -iE "DELETE[[:space:]]+FROM" | grep -viE "WHERE" || true)
+            if [[ -n "$DELETE_NO_WHERE" ]]; then
+              FORBIDDEN_FOUND=true
+              echo "$DELETE_NO_WHERE" | sed "s#^#❌ 금지|DELETE without WHERE|$filename|#" >> $FORBIDDEN_ERRORS_FILE
+            fi
+
+            # --- '검토' 유형 검사 ---
+            if echo "$SQL_CONTENT" | grep -qiE "$SCHEMA_CHANGE_PATTERNS"; then
+              echo "::warning file=$file::[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE) 감지"
+              echo "$SQL_CONTENT" | grep -iE "$SCHEMA_CHANGE_PATTERNS" | sed "s#^#⚠️ 검토|스키마 구조 변경|$filename|#" >> $WARNING_DETAILS_FILE
+              REVIEW_FOUND=true
+            fi
+
+            if echo "$SQL_CONTENT" | grep -qiE "$PERF_LOCK_PATTERNS"; then
+              echo "::warning file=$file::[검토 필요] 인덱스/테이블 속성 변경 감지"
+              echo "$SQL_CONTENT" | grep -iE "$PERF_LOCK_PATTERNS" | sed "s#^#⚠️ 검토|인덱스/테이블 속성 변경|$filename|#" >> $WARNING_DETAILS_FILE
+              REVIEW_FOUND=true
+            fi
+
+            if echo "$SQL_CONTENT" | grep -qiE "$DB_CONSTRAINT_PATTERNS"; then
+              echo "::warning file=$file::[검토 필요] DB 제약조건 변경 감지"
+              echo "$SQL_CONTENT" | grep -iE "$DB_CONSTRAINT_PATTERNS" | sed "s#^#⚠️ 검토|DB 제약조건 변경|$filename|#" >> $WARNING_DETAILS_FILE
+              REVIEW_FOUND=true
+            fi
+
+            if echo "$SQL_CONTENT" | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE" > /dev/null 2>&1; then
+              echo "::warning file=$file::[검토 필요] UPDATE 구문 WHERE 절 확인 필요"
+              echo "$SQL_CONTENT" | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE" | sed "s#^#⚠️ 검토|UPDATE WHERE 절 확인|$filename|#" >> $WARNING_DETAILS_FILE
+              REVIEW_FOUND=true
+            fi
+          done < changed_files.txt
+
+          # 최종 output 설정
+          if [ "$REVIEW_FOUND" = true ]; then
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
-            REVIEW_FOUND=true
           fi
 
           # --- 최종 결과 처리 ---
@@ -252,41 +261,49 @@ jobs:
 
               let errorDetails = `
               ${header}
-            
-              | 위험 레벨 | 사유 | 대상 SQL |
-              |:---------|:-----|:----------|
+
+              | 위험 레벨 | 사유 | 파일 | 대상 SQL |
+              |:---------|:-----|:-----|:----------|
               `;
+
+              // 금지 유형 SQL 처리
               if (errorsContent) {
                 errorsContent.split('\n').forEach(line => {
                   if (line.trim()) {
-                    const match = line.match(/^- \[(.*?)\] (.*)$/);
-                    if (match) {
-                      const reason = match[1];
-                      const query = match[2].replace(/\r/g, '');
-                      errorDetails += `| ❌ 위험 | ${reason} | ${query} |\n`;
+                    const parts = line.split('|');
+                    if (parts.length >= 4) {
+                      const riskLevel = parts[0].trim();
+                      const reason = parts[1].trim();
+                      const fileName = parts[2].trim();
+                      const query = parts[3].trim().replace(/\r/g, '');
+                      errorDetails += `| ${riskLevel} | ${reason} | \`${fileName}\` | \`${query}\` |\n`;
                     } else {
-                      errorDetails += `| ❌ 위험 | 알 수 없음 | ${line} |\n`;
+                      errorDetails += `| ❌ 금지 | 파싱 실패 | - | ${line} |\n`;
                     }
                   }
                 });
               }
+
+              // 검토 유형 SQL 처리
               if (warningsContent) {
                 warningsContent.split('\n').forEach(line => {
                   if (line.trim()) {
-                    const parts = line.split(' | ');
-                    if (parts.length === 3) {
-                      const riskLevel = parts[0];
-                      const reason = parts[1];
-                      const query = parts[2].replace(/\r/g, '');
-                      errorDetails += `| ${riskLevel} | ${reason} | ${query} |\n`;
+                    const parts = line.split('|');
+                    if (parts.length >= 4) {
+                      const riskLevel = parts[0].trim();
+                      const reason = parts[1].trim();
+                      const fileName = parts[2].trim();
+                      const query = parts[3].trim().replace(/\r/g, '');
+                      errorDetails += `| ${riskLevel} | ${reason} | \`${fileName}\` | \`${query}\` |\n`;
                     } else {
-                      errorDetails += `| 알 수 없음 | 알 수 없음 | ${line} |\n`;
+                      errorDetails += `| ⚠️ 검토 | 파싱 실패 | - | ${line} |\n`;
                     }
                   }
                 });
               }
+
               if (!errorsContent && !warningsContent) {
-                errorDetails += `| - | 상세 내용 확인 불가 | - |\n`;
+                errorDetails += `| - | - | - | 상세 내용 확인 불가 |\n`;
               }
               report += `\n${errorDetails}\n**이러한 SQL은 프로덕션 데이터를 손실시킬 가능성이 매우 높으므로 수정 필요**\n`;
             }
