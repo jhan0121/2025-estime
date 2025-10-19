@@ -64,15 +64,19 @@ jobs:
           > $FORBIDDEN_ERRORS_FILE # Clear the file at the start
           > $WARNING_DETAILS_FILE # Clear the file at the start
 
+          # SQL 파일 내용을 한 번만 읽어서 변수에 저장 (주석 제외)
+          echo "SQL 파일 내용 로드 중..."
+          SQL_CONTENT=$(cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--')
+
           echo "--- '금지' 유형 검사 ---"
           FORBIDDEN_PATTERNS="DROP[[:space:]]+(TABLE|DATABASE|COLUMN)|TRUNCATE[[:space:]]+TABLE"
 
-          if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$FORBIDDEN_PATTERNS"; then
+          if echo "$SQL_CONTENT" | grep -qiE "$FORBIDDEN_PATTERNS"; then
             FORBIDDEN_FOUND=true
-            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$FORBIDDEN_PATTERNS" | sed 's#^#- [DROP/TRUNCATE/DROP COLUMN] #' >> $FORBIDDEN_ERRORS_FILE
+            echo "$SQL_CONTENT" | grep -iE "$FORBIDDEN_PATTERNS" | sed 's#^#- [DROP/TRUNCATE/DROP COLUMN] #' >> $FORBIDDEN_ERRORS_FILE
           fi
 
-          DELETE_NO_WHERE=$(cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "DELETE[[:space:]]+FROM" | grep -viE "WHERE" || true)
+          DELETE_NO_WHERE=$(echo "$SQL_CONTENT" | grep -iE "DELETE[[:space:]]+FROM" | grep -viE "WHERE" || true)
           if [[ -n "$DELETE_NO_WHERE" ]]; then
             FORBIDDEN_FOUND=true
             echo "$DELETE_NO_WHERE" | sed 's#^#- [DELETE without WHERE] #' >> $FORBIDDEN_ERRORS_FILE
@@ -81,33 +85,33 @@ jobs:
           echo "--- '검토' 유형 검사 ---"
 
           SCHEMA_CHANGE_PATTERNS="ALTER[[:space:]]+TABLE.*(RENAME|MODIFY|CHANGE)"
-          if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$SCHEMA_CHANGE_PATTERNS"; then
+          if echo "$SQL_CONTENT" | grep -qiE "$SCHEMA_CHANGE_PATTERNS"; then
             echo "::warning::[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE) 감지. 애플리케이션 호환성 확인 필요"
-            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$SCHEMA_CHANGE_PATTERNS" | sed 's#^# ⚠️ 검토 | 스키마 구조 변경 | #' >> warning_details.txt
+            echo "$SQL_CONTENT" | grep -iE "$SCHEMA_CHANGE_PATTERNS" | sed 's#^# ⚠️ 검토 | 스키마 구조 변경 | #' >> $WARNING_DETAILS_FILE
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
             REVIEW_FOUND=true
           fi
 
           PERF_LOCK_PATTERNS="ALTER[[:space:]]+TABLE.*(ENGINE|CHARACTER[[:space:]]+SET)|(CREATE|DROP)[[:space:]]+INDEX"
-          if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$PERF_LOCK_PATTERNS"; then
+          if echo "$SQL_CONTENT" | grep -qiE "$PERF_LOCK_PATTERNS"; then
             echo "::warning::[검토 필요] 인덱스 또는 테이블 속성 변경 감지. 대용량 테이블의 경우 서비스 중단을 유발할 가능성 존재"
-            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$PERF_LOCK_PATTERNS" | sed 's#^# ⚠️ 검토 | 인덱스/테이블 속성 변경 | #' >> warning_details.txt
+            echo "$SQL_CONTENT" | grep -iE "$PERF_LOCK_PATTERNS" | sed 's#^# ⚠️ 검토 | 인덱스/테이블 속성 변경 | #' >> $WARNING_DETAILS_FILE
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
             REVIEW_FOUND=true
           fi
 
           DB_LOGIC_PATTERNS="(CREATE|ALTER|DROP)[[:space:]]+VIEW|(ADD|DROP)[[:space:]]+CONSTRAINT"
-          if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$DB_LOGIC_PATTERNS"; then
+          if echo "$SQL_CONTENT" | grep -qiE "$DB_LOGIC_PATTERNS"; then
             echo "::warning::[검토 필요] DB 제약조건 변경 감지. 숨겨진 부작용 존재 여부 확인 필요"
-            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DB_LOGIC_PATTERNS" | sed 's#^# ⚠️ 검토 | DB 제약조건 변경 | #' >> warning_details.txt
+            echo "$SQL_CONTENT" | grep -iE "$DB_LOGIC_PATTERNS" | sed 's#^# ⚠️ 검토 | DB 제약조건 변경 | #' >> $WARNING_DETAILS_FILE
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
             REVIEW_FOUND=true
           fi
 
-          DATA_CHANGE_PATTERNS="UPDATE[[:space:]]+\w+[[:space:]]+SET"
-          if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE"; then
+          DATA_CHANGE_PATTERNS="UPDATE[[:space:]]+[a-zA-Z0-9_]+[[:space:]]+SET"
+          if echo "$SQL_CONTENT" | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE"; then
             echo "::warning::[검토 필요] UPDATE 구문 감지. WHERE 절 존재 여부 확인 필요"
-            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE" | sed 's#^#WARNING | UPDATE WHERE 절 확인 | #' >> warning_details.txt
+            echo "$SQL_CONTENT" | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE" | sed 's#^#WARNING | UPDATE WHERE 절 확인 | #' >> $WARNING_DETAILS_FILE
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
             REVIEW_FOUND=true
           fi
