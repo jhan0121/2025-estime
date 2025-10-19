@@ -217,13 +217,15 @@ jobs:
         run: |
           echo "::error::Flyway 마이그레이션 실패"
           echo ""
-          echo "==== 실패 원인 분석 ===="
+          echo "실패 원인 분석 저장..."
           
           echo -e "## 마이그레이션 실패\n\n" > migration_error.txt
           echo "### 로그 정보" >> migration_error.txt
           echo '```' >> migration_error.txt
           tail -100 flyway_migration.log >> migration_error.txt
           echo '```' >> migration_error.txt
+          
+          echo "실패 원인 분석 저장 완료"
 
       - name: 마이그레이션 히스토리 확인
         if: steps.flyway_migrate.outputs.status == 'success'

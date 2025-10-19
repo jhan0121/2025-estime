@@ -12,22 +12,22 @@ CREATE TABLE test_table (
 -- 아래 SQL들은 정적 분석 통과 및 마이그레이션 성공 예상
 
 -- 새 테이블 생성
--- CREATE TABLE success_new_table (id INT PRIMARY KEY, value VARCHAR(255));
+CREATE TABLE success_new_table (id INT PRIMARY KEY, value VARCHAR(255));
 
 -- 기본값이 있는 컬럼 추가
--- ALTER TABLE test_table ADD COLUMN new_column VARCHAR(100) DEFAULT 'default_value';
+ALTER TABLE test_table ADD COLUMN new_column VARCHAR(100) DEFAULT 'default_value';
 
 -- NULL 허용 컬럼 추가
--- ALTER TABLE test_table ADD COLUMN another_column INT;
+ALTER TABLE test_table ADD COLUMN another_column INT;
 
 -- INSERT 작업
--- INSERT INTO test_table (id, name, value) VALUES (1, 'Test Name', 'Test Value');
+INSERT INTO test_table (id, name, value) VALUES (1, 'Test Name', 'Test Value');
 
 -- WHERE 절이 있는 UPDATE
--- UPDATE test_table SET name = 'Updated Name' WHERE id = 1;
+UPDATE test_table SET name = 'Updated Name' WHERE id = 1;
 
 -- WHERE 절이 있는 DELETE
--- DELETE FROM test_table WHERE id = 1;
+DELETE FROM test_table WHERE id = 1;
 
 
 -- ===================================================
@@ -186,4 +186,4 @@ CREATE TABLE test_table (
 -- SELCT * FROM test_table;
 
 -- --- 11. 권한 부족 (테스트 유저는 SUPER 권한 없음) ---
-SET GLOBAL max_connections = 200;
+-- SET GLOBAL max_connections = 200;
