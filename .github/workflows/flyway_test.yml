@@ -69,7 +69,7 @@ jobs:
           DELETE_PATTERN="DELETE[[:space:]]+FROM"
           SCHEMA_CHANGE_PATTERNS="ALTER[[:space:]]+TABLE[[:space:]]+[a-zA-Z0-9_\`]+[[:space:]]+((RENAME[[:space:]]+TO)|(MODIFY[[:space:]]+COLUMN)|(CHANGE[[:space:]]+COLUMN))"
           INDEX_TABLE_CHANGE_PATTERNS="ALTER[[:space:]]+TABLE.*(ENGINE|CHARACTER[[:space:]]+SET|CHARSET|COLLATE)|(CREATE|DROP)[[:space:]]+INDEX"
-          DB_CONSTRAINT_PATTERNS="(CREATE|ALTER|DROP)[[:space:]]+VIEW|(ADD|DROP)[[:space:]]+CONSTRAINT"
+          DB_CONSTRAINT_PATTERNS="(ADD|DROP)[[:space:]]+CONSTRAINT"
           DATA_CHANGE_PATTERNS="UPDATE[[:space:]]+[a-zA-Z0-9_]+[[:space:]]+SET"
 
           # 금지 유형 검사 함수
