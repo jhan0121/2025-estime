@@ -77,7 +77,7 @@ jobs:
             echo "검사 중: $file"
 
             # 파일명 추출
-            filename=$(basename "$file")
+            filename=$(basename "$file" .sql)
 
             # 주석 제외 SQL 내용 읽기
             SQL_CONTENT=$(grep -v '^[[:space:]]*--' "$file" || true)
