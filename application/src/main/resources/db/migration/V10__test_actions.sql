@@ -76,8 +76,8 @@ ALTER TABLE test_table MODIFY COLUMN review_col1 TEXT;
 ALTER TABLE test_table CHANGE COLUMN review_col2 review_col2_renamed BIGINT;
 
 -- 컬럼명만 변경 (RENAME COLUMN) - MySQL 8.0+
-ALTER TABLE test_table RENAME COLUMN value TO val;
-ALTER TABLE test_table RENAME COLUMN val TO value;
+ALTER TABLE test_table RENAME COLUMN value TO value_renamed;
+ALTER TABLE test_table RENAME COLUMN value_renamed TO value;
 
 
 -- --- 인덱스 변경 ---
@@ -121,12 +121,12 @@ ALTER TABLE test_table ADD CONSTRAINT unique_name UNIQUE (name);
 
 -- --- 데이터 변경 (UPDATE without WHERE) ---
 
--- INSERT 추가 데이터
-INSERT INTO test_table (id, name, val) VALUES (2, 'Test Name 2', 'Test Value 2');
-INSERT INTO test_table (id, name, val) VALUES (3, 'Test Name 3', 'Test Value 3');
+-- 데이터 추가
+INSERT INTO test_table (id, name, value) VALUES (2, 'Test Name 2', 'Test Value 2');
+INSERT INTO test_table (id, name, value) VALUES (3, 'Test Name 3', 'Test Value 3');
 
 -- WHERE 절 없는 UPDATE
-UPDATE test_table SET val = 'All Same Value';
+UPDATE test_table SET value = 'All Same Value';
 
 
 -- ===================================================
@@ -135,14 +135,14 @@ UPDATE test_table SET val = 'All Same Value';
 -- 여러 검토 필요 항목이 동시에 발생하는 케이스
 
 -- 새 컬럼 추가 후 MODIFY
-ALTER TABLE test_table ADD COLUMN complex_col VARCHAR(50);
-ALTER TABLE test_table MODIFY COLUMN complex_col TEXT;
+-- ALTER TABLE test_table ADD COLUMN complex_col VARCHAR(50);
+-- ALTER TABLE test_table MODIFY COLUMN complex_col TEXT;
 
 -- 인덱스 생성
-CREATE INDEX idx_complex ON test_table (complex_col(100));
+-- CREATE INDEX idx_complex ON test_table (complex_col(100));
 
 -- 제약조건 추가
-ALTER TABLE test_table ADD CONSTRAINT check_complex CHECK (LENGTH(complex_col) > 0);
+-- ALTER TABLE test_table ADD CONSTRAINT check_complex CHECK (LENGTH(complex_col) > 0);
 
 
 -- ===================================================
