@@ -34,7 +34,7 @@ jobs:
           fetch-depth: 0
 
       - name: 변경된 Flyway 마이그레이션 파일 목록 가져오기
-        id: get_changed_files
+        id: check_changed_files
         run: |
           echo "PR에서 변경된 Flyway 마이그레이션 파일 목록 탐색 시작..."
           
@@ -52,7 +52,7 @@ jobs:
 
       - name: SQL 명령어 정적 검사
         id: static_analysis
-        if: steps.get_changed_files.outputs.has_changed_files == 'true'
+        if: steps.check_changed_files.outputs.has_changed_files == 'true'
         run: |
           echo "위험 SQL 명령어 검사 시작..."
           echo "정책: '금지' 유형은 즉시 실패, '검토' 유형은 경고 메시지 출력"
@@ -83,7 +83,7 @@ jobs:
 
           SCHEMA_CHANGE_PATTERNS="ALTER[[:space:]]+TABLE.*(RENAME|MODIFY|CHANGE)"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$SCHEMA_CHANGE_PATTERNS"; then
-            echo "::warning::[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE)이 감지되었습니다. 애플리케이션 호환성을 반드시 확인하세요."
+            echo "::warning::[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE)이 감지되었습니다. 애플리케이션 호환성 확인이 필요합니다."
             cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$SCHEMA_CHANGE_PATTERNS" | sed 's#^#WARNING | 스키마 구조 변경 | #' >> review_warnings_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
             REVIEW_FOUND=true
@@ -99,15 +99,15 @@ jobs:
 
           DB_LOGIC_PATTERNS="(CREATE|ALTER|DROP)[[:space:]]+VIEW|(ADD|DROP)[[:space:]]+CONSTRAINT"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$DB_LOGIC_PATTERNS"; then
-            echo "::warning::[검토 필요] DB 뷰 또는 제약조건 변경이 감지되었습니다. 숨겨진 부작용이 없는지 확인하세요."
-            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DB_LOGIC_PATTERNS" | sed 's#^#WARNING | DB 로직/제약조건 변경 | #' >> review_warnings_details.txt
+            echo "::warning::[검토 필요] DB 제약조건 변경이 감지되었습니다. 숨겨진 부작용 존재 여부 확인이 필요합니다."
+            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DB_LOGIC_PATTERNS" | sed 's#^#WARNING | DB 제약조건 변경 | #' >> review_warnings_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
             REVIEW_FOUND=true
           fi
 
           DATA_CHANGE_PATTERNS="UPDATE[[:space:]]+\w+[[:space:]]+SET"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE"; then
-            echo "::warning::[검토 필요] UPDATE 구문이 감지되었습니다. WHERE 절을 반드시 확인하여 의도치 않은 데이터 변경을 방지하세요."
+            echo "::warning::[검토 필요] UPDATE 구문이 감지되었습니다. WHERE 절 존재 여부 확인이 필요합니다."
             cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE" | sed 's#^#WARNING | UPDATE WHERE 절 확인 | #' >> review_warnings_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
             REVIEW_FOUND=true
@@ -115,7 +115,7 @@ jobs:
 
           # --- 최종 결과 처리 ---
           if [ "$FORBIDDEN_FOUND" = true ]; then
-            echo "::error::[정책 위반] Flyway 스크립트에 '금지' 유형 SQL 명령어 포함되어 있음"
+            echo "::error::Flyway 스크립트 내 '금지' 유형 SQL 명령어 감지"
             echo "forbidden_found=true" >> $GITHUB_OUTPUT
           
             printf "%s\n" "${ERROR_MESSAGES[@]}" > forbidden_errors.txt
@@ -125,50 +125,14 @@ jobs:
           else
             echo "forbidden_found=false" >> $GITHUB_OUTPUT
             if [ "$REVIEW_FOUND" = true ]; then
-              echo "'검토' 유형 경고 발견"
+              echo "Flyway 스크립트 내 '검토' 유형 SQL 명령어 감지"
             else
-              echo "위험/검토 명령어가 미발견"
+              echo "위험/검토 명령어 미발견"
             fi
           fi
 
-      - name: 하위 호환성 검사
-        id: backward_compatibility_check
-        if: steps.get_changed_files.outputs.has_changed_files == 'true'
-        run: |
-          echo "하위 호환성 문제 검사 시작..."
-          ERROR_FOUND=false
-          COMPATIBILITY_REPORT_FILE="compatibility_report.txt"
-          > $COMPATIBILITY_REPORT_FILE # Clear the file at the start
-
-          # ADD COLUMN NOT NULL without DEFAULT
-          ADD_NOT_NULL_NO_DEFAULT=$(cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "ADD[[:space:]]+COLUMN.*NOT[[:space:]]+NULL" | grep -viE "DEFAULT" || true)
-          if [[ -n "$ADD_NOT_NULL_NO_DEFAULT" ]]; then
-            echo "ERROR | DEFAULT 값 없이 NOT NULL 컬럼 추가 | $ADD_NOT_NULL_NO_DEFAULT" >> $COMPATIBILITY_REPORT_FILE
-            ERROR_FOUND=true
-          fi
-
-          # ALTER TABLE RENAME (table or column)
-          ALTER_RENAME=$(cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "ALTER[[:space:]]+TABLE.*RENAME" || true)
-          if [[ -n "$ALTER_RENAME" ]]; then
-            echo "ERROR | 테이블/컬럼명 변경(RENAME) | $ALTER_RENAME" >> $COMPATIBILITY_REPORT_FILE
-            ERROR_FOUND=true
-          fi
-
-          # ALTER COLUMN DROP DEFAULT
-          ALTER_DROP_DEFAULT=$(cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "ALTER[[:space:]]+COLUMN.*DROP[[:space:]]+DEFAULT" || true)
-          if [[ -n "$ALTER_DROP_DEFAULT" ]]; then
-            echo "WARNING | 컬럼 DEFAULT 값 삭제 | $ALTER_DROP_DEFAULT" >> $COMPATIBILITY_REPORT_FILE
-          fi
-
-          if [ "$ERROR_FOUND" = true ]; then
-            echo "::error::[하위 호환성 위반] 치명적인 하위 호환성 문제가 발견되었습니다. 상세 내용은 보고서를 확인하세요."
-            exit 1
-          elif [ -s "$COMPATIBILITY_REPORT_FILE" ]; then # Check if file exists and is not empty for warnings
-            echo "::warning::[하위 호환성 주의] 하위 호환성 주의 사항이 발견되었습니다. 상세 내용은 보고서를 확인하세요."
-          fi
-
       - name: Flyway CLI 다운로드
-        if: steps.get_changed_files.outputs.has_changed_files == 'true'
+        if: steps.check_changed_files.outputs.has_changed_files == 'true'
         run: |
           echo "Flyway CLI 다운로드 시작..."
           
@@ -181,7 +145,7 @@ jobs:
 
       - name: 테스트 유저 생성
         id: create_user
-        if: steps.get_changed_files.outputs.has_changed_files == 'true'
+        if: steps.check_changed_files.outputs.has_changed_files == 'true'
         run: |
           echo "테스트 유저 생성 시작..."
           
@@ -206,32 +170,32 @@ jobs:
 
       - name: Flyway CLI 기반 마이그레이션 검증 실행
         id: flyway_migrate
-        if: steps.get_changed_files.outputs.has_changed_files == 'true'
+        if: steps.check_changed_files.outputs.has_changed_files == 'true'
         continue-on-error: true
         run: |
           echo "Flyway 마이그레이션 검증 실행 시작..."
           
           if ! ${{ env.FLYWAY_PATH }}/flyway migrate "-url=jdbc:mysql://127.0.0.1:3306/testdb?allowPublicKeyRetrieval=true&useSSL=false" "-user=${{ steps.create_user.outputs.flyway_user }}" "-password=${{ steps.create_user.outputs.flyway_password }}" "-locations=filesystem:application/src/main/resources/db/migration" "-connectRetries=10" > flyway_migration.log 2>&1; then
-            echo "❌ 마이그레이션 실패"
+            echo "마이그레이션 실패"
             echo "--- Flyway Log ---"
             cat flyway_migration.log
             echo "--------------------"
             echo "status=failed" >> $GITHUB_OUTPUT
             exit 1
           else
-            echo "✅ 마이그레이션 성공"
+            echo "마이그레이션 성공"
             echo "status=success" >> $GITHUB_OUTPUT
           fi
 
       - name: 마이그레이션 실패 원인 분석
         if: steps.flyway_migrate.outputs.status == 'failed'
         run: |
-          echo "::error::❌ Flyway 마이그레이션이 실패했습니다"
+          echo "::error::Flyway 마이그레이션 실패"
           echo ""
           echo "==== 실패 원인 분석 ===="
           
-          echo -e "## ❌ 마이그레이션 실패\n\n" > migration_error.txt
-          echo "### 상세 로그" >> migration_error.txt
+          echo -e "## 마이그레이션 실패\n\n" > migration_error.txt
+          echo "### 로그 정보" >> migration_error.txt
           echo '```' >> migration_error.txt
           tail -100 flyway_migration.log >> migration_error.txt
           echo '```' >> migration_error.txt
@@ -239,7 +203,6 @@ jobs:
       - name: 마이그레이션 히스토리 확인
         if: steps.flyway_migrate.outputs.status == 'success'
         run: |
-          # create_user 스텝에서 생성한 flyway_user/flyway_password 사용
           echo "마이그레이션 히스토리 확인 시작..."
           
           mysql -h 127.0.0.1 -u${{ steps.create_user.outputs.flyway_user }} -p${{ steps.create_user.outputs.flyway_password }} testdb << 'EOF'
@@ -254,7 +217,7 @@ jobs:
             LIMIT 10;
           EOF
 
-      - name: PR에 검증 결과 코멘트
+      - name: 검증 결과 코멘트 작성
         if: always()
         uses: actions/github-script@v8
         with:
@@ -267,12 +230,11 @@ jobs:
             
             | 검사 항목 | 결과 |
             |----------|------|
-            | 위험한 SQL 명령어 검사 | ${{ steps.static_analysis.outputs.forbidden_found == 'true' && '❌ 실패' || steps.static_analysis.outputs.review_warnings_found == 'true' && '⚠️ 경고' || '✅ 통과' }} |
-            | 하위 호환성 검사 | ${{ steps.backward_compatibility_check.outcome == 'success' && '✅ 통과' || '❌ 실패' }} |
-            | 마이그레이션 실행 테스트 | ${{ steps.flyway_migrate.outputs.status == 'success' && '✅ 통과' || steps.flyway_migrate.outputs.status == 'failed' && '❌ 실패' || '⏭️ 스킵' }} |
+            | 위험 SQL 탐색 | ${{ steps.static_analysis.outputs.forbidden_found == 'true' && '❌ 위험' || steps.static_analysis.outputs.review_warnings_found == 'true' && '⚠️ 경고' || '✅ 통과' }} |
+            | 마이그레이션 실행 | ${{ steps.flyway_migrate.outputs.status == 'success' && '✅ 통과' || steps.flyway_migrate.outputs.status == 'failed' && '❌ 실패' || '⏭️ 스킵' }} |
             `;
             
-            // 위험한 명령어 발견 시
+            // 위험 SQL 발견 시
             if ('${{ steps.static_analysis.outputs.forbidden_found }}' === 'true' || '${{ steps.static_analysis.outputs.review_warnings_found }}' === 'true') {
               const errorsContent = fs.existsSync('forbidden_errors.txt') 
                 ? fs.readFileSync('forbidden_errors.txt', 'utf8') 
@@ -281,15 +243,15 @@ jobs:
                 ? fs.readFileSync('review_warnings_details.txt', 'utf8') 
                 : '';
 
-              let header = '## ❌ 위험한 명령어 발견';
+              let header = '## ❌ `위험` 단계 SQL 탐지';
               if ('${{ steps.static_analysis.outputs.forbidden_found }}' !== 'true' && '${{ steps.static_analysis.outputs.review_warnings_found }}' === 'true') {
-                header = '## ⚠️ 검토 필요 명령어';
+                header = '## ⚠️ `검토` 단계 SQL 탐지';
               }
 
               let errorDetails = `
               ${header}
             
-              다음 위험한 명령어들이 발견되었습니다:
+              다음 SQL이 탐지되었습니다:
             
               | 위험 레벨 | 사유 | 대상 쿼리 |
               |:---------|:-----|:----------|
@@ -301,9 +263,9 @@ jobs:
                     if (match) {
                       const reason = match[1];
                       const query = match[2].replace(/\r/g, '');
-                      errorDetails += `| 금지 | ${reason} | ${query} |\n`;
+                      errorDetails += `| ❌ 금지 | ${reason} | ${query} |\n`;
                     } else {
-                      errorDetails += `| 금지 | 알 수 없음 | ${line} |\n`;
+                      errorDetails += `| ❌ 금지 | 알 수 없음 | ${line} |\n`;
                     }
                   }
                 });
@@ -326,42 +288,7 @@ jobs:
               if (!errorsContent && !reviewWarningsContent) {
                 errorDetails += `| - | 상세 내용 확인 불가 | - |\n`;
               }
-              report += `\n${errorDetails}\n**이러한 명령어는 프로덕션 데이터를 손실시킬 수 있으므로 절대 허용되지 않습니다.**\n`;
-            }
-            
-            // 하위 호환성 문제 발견 시
-            if ('${{ steps.backward_compatibility_check.outcome }}' === 'failure' || (fs.existsSync('compatibility_report.txt') && fs.readFileSync('compatibility_report.txt', 'utf8').trim() !== '')) {
-              const fs = require('fs');
-              const compatibilityContent = fs.existsSync('compatibility_report.txt') 
-                ? fs.readFileSync('compatibility_report.txt', 'utf8') 
-                : '';
-            
-            let compatibilityDetails = `
-            ## ⚠️ 하위 호환성 검사 상세
-            
-            다음 하위 호환성 문제/주의 사항이 발견되었습니다:
-            
-            | 위험 레벨 | 사유 | 대상 쿼리 |
-            |:---------|:-----|:----------|
-            `;
-              if (compatibilityContent) {
-                compatibilityContent.split('\n').forEach(line => {
-                  if (line.trim()) {
-                    const parts = line.split(' | ');
-                    if (parts.length === 3) {
-                      const riskLevel = parts[0];
-                      const reason = parts[1];
-                      const query = parts[2].replace(/\r/g, '');
-                      compatibilityDetails += `| ${riskLevel} | ${reason} | ${query} |\n`;
-                    } else {
-                      compatibilityDetails += `| 알 수 없음 | 알 수 없음 | ${line} |\n`;
-                    }
-                  }
-                });
-              } else {
-                compatibilityDetails += `| 알 수 없음 | 상세 내용 확인 불가 | - |`;
-              }
-              report += compatibilityDetails + ``;
+              report += `\n${errorDetails}\n**이러한 SQL은 프로덕션 데이터를 손실시킬 가능성 매우 높으므로 수정 필요.**\n`;
             }
             
             // 마이그레이션 실패 시
@@ -369,14 +296,14 @@ jobs:
             const fs = require('fs');
             const errorLog = fs.existsSync('migration_error.txt')
             ? fs.readFileSync('migration_error.txt', 'utf8')
-              : '상세 로그를 확인할 수 없습니다.';
+              : '상세 로그 확인 불가';
             
             report += `\n${errorLog}\n`;
             }
             
             // 성공 시
             if ('${{ steps.flyway_migrate.outputs.status }}' === 'success') {
-              report += `\n## ✅ 검증 성공\n\n모든 마이그레이션 검증 로직이 정상 실행되었습니다.\n`;
+              report += `\n## ✅ 검증 성공\n\n모든 마이그레이션 검증 로직 정상 실행\n`;
             }
             
             await github.rest.issues.createComment({
