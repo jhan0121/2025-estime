@@ -33,16 +33,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 변경된 Flyway 마이그레이션 파일 목록 가져오기
+      - name: 변경된 Flyway 마이그레이션 파일 목록 탐색
         id: check_changed_files
         run: |
-          echo "PR에서 변경된 Flyway 마이그레이션 파일 목록 탐색 시작..."
+          echo "변경된 Flyway 마이그레이션 파일 목록 탐색 시작..."
           
           git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} -- 'application/src/main/resources/db/migration/**.sql' \
             | grep -E '/(V|R)[0-9_.]+__.*\.sql$' > changed_files.txt
 
           if [ ! -s changed_files.txt ]; then
-            echo "변경된 Flyway 마이그레이션 파일이 없습니다. 정적 분석을 건너뜁니다."
+            echo "변경된 Flyway 마이그레이션 파일 부재. 정적 분석 종료."
             echo "has_changed_files=false" >> $GITHUB_OUTPUT
           else
             echo "검증 대상 파일:"
@@ -55,13 +55,13 @@ jobs:
         if: steps.check_changed_files.outputs.has_changed_files == 'true'
         run: |
           echo "위험 SQL 명령어 검사 시작..."
-          echo "정책: '금지' 유형은 즉시 실패, '검토' 유형은 경고 메시지 출력"
+          echo "정책: '금지' 유형 즉시 실패, '검토' 유형 경고 메시지 출력"
 
           FORBIDDEN_FOUND=false
           REVIEW_FOUND=false
           ERROR_MESSAGES=()
-          REVIEW_WARNINGS_DETAILS_FILE="review_warnings_details.txt"
-          > $REVIEW_WARNINGS_DETAILS_FILE # Clear the file at the start
+          WARNING_DETAILS_FILE="warning_details.txt"
+          > $WARNING_DETAILS_FILE # Clear the file at the start
 
           echo "--- '금지' 유형 검사 ---"
           FORBIDDEN_PATTERNS="DROP[[:space:]]+(TABLE|DATABASE|COLUMN)|TRUNCATE[[:space:]]+TABLE"
@@ -83,32 +83,32 @@ jobs:
 
           SCHEMA_CHANGE_PATTERNS="ALTER[[:space:]]+TABLE.*(RENAME|MODIFY|CHANGE)"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$SCHEMA_CHANGE_PATTERNS"; then
-            echo "::warning::[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE)이 감지되었습니다. 애플리케이션 호환성 확인이 필요합니다."
-            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$SCHEMA_CHANGE_PATTERNS" | sed 's#^#WARNING | 스키마 구조 변경 | #' >> review_warnings_details.txt
+            echo "::warning::[검토 필요] 스키마 구조 변경(RENAME, MODIFY, CHANGE) 감지. 애플리케이션 호환성 확인 필요"
+            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$SCHEMA_CHANGE_PATTERNS" | sed 's#^# ⚠️ 검토 | 스키마 구조 변경 | #' >> warning_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
             REVIEW_FOUND=true
           fi
 
           PERF_LOCK_PATTERNS="ALTER[[:space:]]+TABLE.*(ENGINE|CHARACTER[[:space:]]+SET)|(CREATE|DROP)[[:space:]]+INDEX"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$PERF_LOCK_PATTERNS"; then
-            echo "::warning::[검토 필요] 인덱스 또는 테이블 속성 변경이 감지되었습니다. 대용량 테이블의 경우 서비스 중단(Lock)을 유발할 수 있습니다."
-            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$PERF_LOCK_PATTERNS" | sed 's#^#WARNING | 인덱스/테이블 속성 변경 | #' >> review_warnings_details.txt
+            echo "::warning::[검토 필요] 인덱스 또는 테이블 속성 변경 감지. 대용량 테이블의 경우 서비스 중단을 유발할 가능성 존재"
+            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$PERF_LOCK_PATTERNS" | sed 's#^# ⚠️ 검토 | 인덱스/테이블 속성 변경 | #' >> warning_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
             REVIEW_FOUND=true
           fi
 
           DB_LOGIC_PATTERNS="(CREATE|ALTER|DROP)[[:space:]]+VIEW|(ADD|DROP)[[:space:]]+CONSTRAINT"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -qiE "$DB_LOGIC_PATTERNS"; then
-            echo "::warning::[검토 필요] DB 제약조건 변경이 감지되었습니다. 숨겨진 부작용 존재 여부 확인이 필요합니다."
-            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DB_LOGIC_PATTERNS" | sed 's#^#WARNING | DB 제약조건 변경 | #' >> review_warnings_details.txt
+            echo "::warning::[검토 필요] DB 제약조건 변경 감지. 숨겨진 부작용 존재 여부 확인 필요"
+            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DB_LOGIC_PATTERNS" | sed 's#^# ⚠️ 검토 | DB 제약조건 변경 | #' >> warning_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
             REVIEW_FOUND=true
           fi
 
           DATA_CHANGE_PATTERNS="UPDATE[[:space:]]+\w+[[:space:]]+SET"
           if cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE"; then
-            echo "::warning::[검토 필요] UPDATE 구문이 감지되었습니다. WHERE 절 존재 여부 확인이 필요합니다."
-            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE" | sed 's#^#WARNING | UPDATE WHERE 절 확인 | #' >> review_warnings_details.txt
+            echo "::warning::[검토 필요] UPDATE 구문 감지. WHERE 절 존재 여부 확인 필요"
+            cat $(cat changed_files.txt) | grep -v '^[[:space:]]*--' | grep -iE "$DATA_CHANGE_PATTERNS" | grep -viE "WHERE" | sed 's#^#WARNING | UPDATE WHERE 절 확인 | #' >> warning_details.txt
             echo "review_warnings_found=true" >> $GITHUB_OUTPUT
             REVIEW_FOUND=true
           fi
@@ -228,10 +228,10 @@ jobs:
             
             ## 검증 항목
             
-            | 검사 항목 | 결과 |
+            | 검증 유형 | 결과 |
             |----------|------|
-            | 위험 SQL 탐색 | ${{ steps.static_analysis.outputs.forbidden_found == 'true' && '❌ 위험' || steps.static_analysis.outputs.review_warnings_found == 'true' && '⚠️ 경고' || '✅ 통과' }} |
-            | 마이그레이션 실행 | ${{ steps.flyway_migrate.outputs.status == 'success' && '✅ 통과' || steps.flyway_migrate.outputs.status == 'failed' && '❌ 실패' || '⏭️ 스킵' }} |
+            | 위험 SQL 탐색 | ${{ steps.static_analysis.outputs.forbidden_found == 'true' && '❌ 위험' || steps.static_analysis.outputs.review_warnings_found == 'true' && '⚠️ 검토' || '✅ 통과' }} |
+            | 마이그레이션 실행 | ${{ steps.flyway_migrate.outputs.status == 'success' && '✅ 성공' || steps.flyway_migrate.outputs.status == 'failed' && '❌ 실패' || '⏭️ 스킵' }} |
             `;
             
             // 위험 SQL 발견 시
@@ -239,8 +239,8 @@ jobs:
               const errorsContent = fs.existsSync('forbidden_errors.txt') 
                 ? fs.readFileSync('forbidden_errors.txt', 'utf8') 
                 : '';
-              const reviewWarningsContent = fs.existsSync('review_warnings_details.txt') 
-                ? fs.readFileSync('review_warnings_details.txt', 'utf8') 
+              const warningsContent = fs.existsSync('warning_details.txt') 
+                ? fs.readFileSync('warning_details.txt', 'utf8') 
                 : '';
 
               let header = '## ❌ `위험` 단계 SQL 탐지';
@@ -251,9 +251,7 @@ jobs:
               let errorDetails = `
               ${header}
             
-              다음 SQL이 탐지되었습니다:
-            
-              | 위험 레벨 | 사유 | 대상 쿼리 |
+              | 위험 레벨 | 사유 | 대상 SQL |
               |:---------|:-----|:----------|
               `;
               if (errorsContent) {
@@ -263,15 +261,15 @@ jobs:
                     if (match) {
                       const reason = match[1];
                       const query = match[2].replace(/\r/g, '');
-                      errorDetails += `| ❌ 금지 | ${reason} | ${query} |\n`;
+                      errorDetails += `| ❌ 위험 | ${reason} | ${query} |\n`;
                     } else {
-                      errorDetails += `| ❌ 금지 | 알 수 없음 | ${line} |\n`;
+                      errorDetails += `| ❌ 위험 | 알 수 없음 | ${line} |\n`;
                     }
                   }
                 });
               }
-              if (reviewWarningsContent) {
-                reviewWarningsContent.split('\n').forEach(line => {
+              if (warningsContent) {
+                warningsContent.split('\n').forEach(line => {
                   if (line.trim()) {
                     const parts = line.split(' | ');
                     if (parts.length === 3) {
@@ -285,10 +283,10 @@ jobs:
                   }
                 });
               }
-              if (!errorsContent && !reviewWarningsContent) {
+              if (!errorsContent && !warningsContent) {
                 errorDetails += `| - | 상세 내용 확인 불가 | - |\n`;
               }
-              report += `\n${errorDetails}\n**이러한 SQL은 프로덕션 데이터를 손실시킬 가능성 매우 높으므로 수정 필요.**\n`;
+              report += `\n${errorDetails}\n**이러한 SQL은 프로덕션 데이터를 손실시킬 가능성이 매우 높으므로 수정 필요**\n`;
             }
             
             // 마이그레이션 실패 시
@@ -313,7 +311,7 @@ jobs:
               body: report
             });
 
-      - name: Close PR, if validation fail
+      - name: Request changes if validation fail
         if: failure()
         uses: actions/github-script@v8
         with:
@@ -321,11 +319,18 @@ jobs:
           script: |
             const pull_number = ${{ github.event.pull_request.number }}
             const updated_title = `[FLYWAY 검증 실패] ${{ github.event.pull_request.title }}`
-            
+
             await github.rest.pulls.update({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: pull_number,
-              title: updated_title,
-              state: 'closed'
+              title: updated_title
+            })
+
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pull_number,
+              event: 'REQUEST_CHANGES',
+              body: 'Flyway 마이그레이션 검증 실패'
             })
