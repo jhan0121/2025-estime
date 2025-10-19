@@ -276,9 +276,9 @@ jobs:
                       const reason = parts[1].trim();
                       const fileName = parts[2].trim();
                       const query = parts[3].trim().replace(/\r/g, '');
-                      errorDetails += `| ${riskLevel} | ${reason} | \`${fileName}\` | \`${query}\` |\n`;
+                      errorDetails += `| \`${riskLevel}\` | ${reason} | \`${fileName}\` | \`${query}\` |\n`;
                     } else {
-                      errorDetails += `| ❌ 금지 | 파싱 실패 | - | ${line} |\n`;
+                      errorDetails += `| \`❌ 금지\` | 파싱 실패 | - | ${line} |\n`;
                     }
                   }
                 });
@@ -294,9 +294,9 @@ jobs:
                       const reason = parts[1].trim();
                       const fileName = parts[2].trim();
                       const query = parts[3].trim().replace(/\r/g, '');
-                      errorDetails += `| ${riskLevel} | ${reason} | \`${fileName}\` | \`${query}\` |\n`;
+                      errorDetails += `| \`${riskLevel}\` | ${reason} | \`${fileName}\` | \`${query}\` |\n`;
                     } else {
-                      errorDetails += `| ⚠️ 검토 | 파싱 실패 | - | ${line} |\n`;
+                      errorDetails += `| \`⚠️ 검토\` | 파싱 실패 | - | ${line} |\n`;
                     }
                   }
                 });
