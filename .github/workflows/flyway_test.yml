@@ -113,8 +113,20 @@ jobs:
             # 세미콜론으로 SQL 문 분리하여 각각 검사
             local sql_statements=$(echo "$SQL_CONTENT" | tr '\n' ' ' | sed 's/;/;\n/g')
 
+            # 디버그: reason이 "UPDATE WHERE 절 확인"일 때만 로깅
+            local loop_count=0
+            local match_count=0
+            if [[ "$reason" == "UPDATE WHERE 절 확인" ]]; then
+              echo "[DEBUG] Starting UPDATE pattern check for file: $file"
+              echo "[DEBUG] Total statements to check: $(echo "$sql_statements" | wc -l)"
+            fi
+
             while IFS= read -r statement; do
               [[ -z "$statement" ]] && continue
+
+              if [[ "$reason" == "UPDATE WHERE 절 확인" ]]; then
+                loop_count=$((loop_count + 1))
+              fi
 
               local matched
               if [[ -n "$exclude_pattern" ]]; then
@@ -129,11 +141,23 @@ jobs:
               fi
 
               if [[ -n "$matched" ]]; then
+                if [[ "$reason" == "UPDATE WHERE 절 확인" ]]; then
+                  match_count=$((match_count + 1))
+                  echo "[DEBUG] Match #$match_count at loop iteration $loop_count"
+                  echo "[DEBUG] Matched content length: ${#matched} chars"
+                  echo "[DEBUG] First 100 chars: ${matched:0:100}"
+                fi
+
                 echo "::warning file=$file::$warning_message"
                 printf '%s\n' "$matched" | sed '/^[[:space:]]*$/d; s#^#⚠️ 검토|'"$reason"'|'"$filename"'|#' >> $WARNING_DETAILS_FILE
                 REVIEW_FOUND=true
               fi
             done <<< "$sql_statements"
+
+            if [[ "$reason" == "UPDATE WHERE 절 확인" ]]; then
+              echo "[DEBUG] UPDATE pattern check complete: $loop_count iterations, $match_count matches"
+              echo "[DEBUG] Lines written to warning file: $(grep -c '^⚠️ 검토|UPDATE WHERE 절 확인|' $WARNING_DETAILS_FILE || echo 0)"
+            fi
           }
 
           echo "파일별 SQL 검증 시작..."
