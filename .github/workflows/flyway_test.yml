@@ -98,7 +98,7 @@ jobs:
 
               if [[ -n "$matched" ]]; then
                 FORBIDDEN_FOUND=true
-                echo "$matched" | sed "s#^#❌ 금지|$reason|$filename|#" >> $FORBIDDEN_ERRORS_FILE
+                echo "$matched" | grep -v '^[[:space:]]*$' | sed "s#^#❌ 금지|$reason|$filename|#" >> $FORBIDDEN_ERRORS_FILE
               fi
             done <<< "$sql_statements"
           }
@@ -130,7 +130,7 @@ jobs:
 
               if [[ -n "$matched" ]]; then
                 echo "::warning file=$file::$warning_message"
-                echo "$matched" | sed "s#^#⚠️ 검토|$reason|$filename|#" >> $WARNING_DETAILS_FILE
+                echo "$matched" | grep -v '^[[:space:]]*$' | sed "s#^#⚠️ 검토|$reason|$filename|#" >> $WARNING_DETAILS_FILE
                 REVIEW_FOUND=true
               fi
             done <<< "$sql_statements"
