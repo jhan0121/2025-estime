@@ -5,6 +5,40 @@ CREATE TABLE test_table (
     value VARCHAR(100)
 );
 
+-- ===================================================
+-- 🧪 멀티라인 주석 무시 검증 (Comment Handling Test)
+-- ===================================================
+-- 아래 주석 내부의 위험한 SQL들은 모두 무시되어야 함
+
+/*
+ * [테스트 1] 주석 내부의 금지 명령어들 - 모두 무시되어야 함
+ * DROP TABLE users;
+ * DROP DATABASE production_db;
+ * TRUNCATE TABLE important_data;
+ * DELETE FROM critical_table;
+ * ALTER TABLE users DROP COLUMN email;
+ */
+
+/*
+ * [테스트 2] 주석 내부의 검토 필요 명령어들 - 모두 무시되어야 함
+ * ALTER TABLE users RENAME TO customers;
+ * ALTER TABLE users MODIFY COLUMN name TEXT;
+ * CREATE INDEX idx_test ON users(name);
+ * ALTER TABLE users ENGINE=InnoDB;
+ * UPDATE users SET status = 'inactive';
+ */
+
+/* [테스트 3] 한 줄 멀티라인 주석 - DROP TABLE should_be_ignored; */
+
+/*
+ * [테스트 4] 복잡한 SQL이 포함된 주석
+ * CREATE TABLE users (
+ *   id INT PRIMARY KEY, -- 사용자 ID
+ *   name VARCHAR(100), /* 이름 */
+ *   email VARCHAR(255)
+ * );
+ * DELETE FROM users WHERE id > 0;
+ */
 
 -- ===================================================
 -- ✅ 성공 케이스 (Success Cases)
