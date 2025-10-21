@@ -119,6 +119,9 @@ jobs:
             if [[ "$reason" == "UPDATE WHERE 절 확인" ]]; then
               echo "[DEBUG] Starting UPDATE pattern check for file: $file"
               echo "[DEBUG] Total statements to check: $(echo "$sql_statements" | wc -l)"
+              echo "[DEBUG] ===== SQL_STATEMENTS 내용 (첫 20줄) ====="
+              echo "$sql_statements" | head -20 | cat -n
+              echo "[DEBUG] ===== END ====="
             fi
 
             while IFS= read -r statement; do

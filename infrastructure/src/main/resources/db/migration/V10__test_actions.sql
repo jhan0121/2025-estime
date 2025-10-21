@@ -132,9 +132,6 @@ CREATE INDEX idx_name ON test_table (name);
 -- 인덱스 삭제
 DROP INDEX idx_name ON test_table;
 
--- 다시 생성 (이후 테스트용)
-CREATE INDEX idx_name ON test_table (name);
-
 
 --- 테이블 속성 변경 ---
 
