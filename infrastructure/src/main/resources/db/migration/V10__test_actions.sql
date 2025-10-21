@@ -68,7 +68,7 @@ DELETE FROM test_table
 WHERE id = 1
   AND name = 'test';
 
--- [테스트 4] 멀티라인 UPDATE with WHERE
+-- [테스트 4] 멀티라인 UPDATE
 UPDATE test_table
 SET value = 'updated',
     name = 'updated';
@@ -95,7 +95,7 @@ SET value = 'updated',
 -- ALTER TABLE test_drop_column_example DROP COLUMN example_column;
 
 -- DELETE without WHERE (WHERE 절 없는 DELETE)
--- DELETE FROM test_delete_without_where;
+-- DELETE FROM test_table;
 
 
 -- ===================================================
@@ -105,72 +105,72 @@ SET value = 'updated',
 
 -- --- 스키마 구조 변경 (RENAME/MODIFY/CHANGE) ---
 
--- -- 컬럼 추가 (사전 준비)
--- ALTER TABLE test_table ADD COLUMN review_col1 VARCHAR(100) DEFAULT 'default_value';
--- ALTER TABLE test_table ADD COLUMN review_col2 INT;
---
--- -- 테이블명 변경
--- ALTER TABLE test_table RENAME TO test_table_renamed;
--- ALTER TABLE test_table_renamed RENAME TO test_table;
---
--- -- 컬럼 타입 변경 (MODIFY)
--- ALTER TABLE test_table MODIFY COLUMN review_col1 TEXT;
---
--- -- 컬럼명 및 타입 변경 (CHANGE)
--- ALTER TABLE test_table CHANGE COLUMN review_col2 review_col2_renamed BIGINT;
---
--- -- 컬럼명만 변경 (RENAME COLUMN) - MySQL 8.0+
--- ALTER TABLE test_table RENAME COLUMN value TO value_renamed;
--- ALTER TABLE test_table RENAME COLUMN value_renamed TO value;
+-- 컬럼 추가 (사전 준비)
+ALTER TABLE test_table ADD COLUMN review_col1 VARCHAR(100) DEFAULT 'default_value';
+ALTER TABLE test_table ADD COLUMN review_col2 INT;
+
+-- 테이블명 변경
+ALTER TABLE test_table RENAME TO test_table_renamed;
+ALTER TABLE test_table_renamed RENAME TO test_table;
+
+-- 컬럼 타입 변경 (MODIFY)
+ALTER TABLE test_table MODIFY COLUMN review_col1 TEXT;
+
+-- 컬럼명 및 타입 변경 (CHANGE)
+ALTER TABLE test_table CHANGE COLUMN review_col2 review_col2_renamed BIGINT;
+
+-- 컬럼명만 변경 (RENAME COLUMN) - MySQL 8.0+
+ALTER TABLE test_table RENAME COLUMN value TO value_renamed;
+ALTER TABLE test_table RENAME COLUMN value_renamed TO value;
 
 
--- --- 인덱스 변경 ---
+--- 인덱스 변경 ---
 
--- -- 인덱스 생성
--- CREATE INDEX idx_name ON test_table (name);
---
--- -- 인덱스 삭제
--- DROP INDEX idx_name ON test_table;
---
--- -- 다시 생성 (이후 테스트용)
--- CREATE INDEX idx_name ON test_table (name);
+-- 인덱스 생성
+CREATE INDEX idx_name ON test_table (name);
 
+-- 인덱스 삭제
+DROP INDEX idx_name ON test_table;
 
--- --- 테이블 속성 변경 ---
-
--- -- 새 테이블 생성 (사전 준비)
--- CREATE TABLE review_test_table (id INT PRIMARY KEY, value VARCHAR(255));
---
--- -- 테이블 엔진 변경
--- ALTER TABLE review_test_table ENGINE=InnoDB;
---
--- -- 문자셋 변경 (CHARACTER SET)
--- ALTER TABLE review_test_table CHARACTER SET utf8mb4;
---
--- -- 콜레이션 변경
--- ALTER TABLE review_test_table COLLATE=utf8mb4_unicode_ci;
+-- 다시 생성 (이후 테스트용)
+CREATE INDEX idx_name ON test_table (name);
 
 
--- --- DB 제약조건 변경 ---
+--- 테이블 속성 변경 ---
 
--- -- 제약조건 추가 (UNIQUE)
--- ALTER TABLE test_table ADD CONSTRAINT unique_name UNIQUE (name);
---
--- -- 제약조건 삭제
--- ALTER TABLE test_table DROP CONSTRAINT unique_name;
---
--- -- 제약조건 다시 추가
--- ALTER TABLE test_table ADD CONSTRAINT unique_name UNIQUE (name);
+-- 새 테이블 생성 (사전 준비)
+CREATE TABLE review_test_table (id INT PRIMARY KEY, value VARCHAR(255));
+
+-- 테이블 엔진 변경
+ALTER TABLE review_test_table ENGINE=InnoDB;
+
+-- 문자셋 변경 (CHARACTER SET)
+ALTER TABLE review_test_table CHARACTER SET utf8mb4;
+
+-- 콜레이션 변경
+ALTER TABLE review_test_table COLLATE=utf8mb4_unicode_ci;
 
 
--- --- 데이터 변경 (UPDATE without WHERE) ---
+--- DB 제약조건 변경 ---
 
--- -- 데이터 추가
--- INSERT INTO test_table (id, name, value) VALUES (2, 'Test Name 2', 'Test Value 2');
--- INSERT INTO test_table (id, name, value) VALUES (3, 'Test Name 3', 'Test Value 3');
---
--- -- WHERE 절 없는 UPDATE
--- UPDATE test_table SET value = 'All Same Value';
+-- 제약조건 추가 (UNIQUE)
+ALTER TABLE test_table ADD CONSTRAINT unique_name UNIQUE (name);
+
+-- 제약조건 삭제
+ALTER TABLE test_table DROP CONSTRAINT unique_name;
+
+-- 제약조건 다시 추가
+ALTER TABLE test_table ADD CONSTRAINT unique_name UNIQUE (name);
+
+
+--- 데이터 변경 (UPDATE without WHERE) ---
+
+-- 데이터 추가
+INSERT INTO test_table (id, name, value) VALUES (2, 'Test Name 2', 'Test Value 2');
+INSERT INTO test_table (id, name, value) VALUES (3, 'Test Name 3', 'Test Value 3');
+
+-- WHERE 절 없는 UPDATE
+UPDATE test_table SET value = 'All Same Value';
 
 
 -- ===================================================
