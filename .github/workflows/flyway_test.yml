@@ -84,7 +84,7 @@ jobs:
             while IFS= read -r statement; do
               [[ -z "$statement" ]] && continue
 
-              local matched
+              local matched=""
               if [[ -n "$exclude_pattern" ]]; then
                 # 패턴 매칭 후 exclude_pattern이 없는 경우만 선택
                 if echo "$statement" | grep -iqE "$pattern"; then
@@ -131,7 +131,7 @@ jobs:
                 loop_count=$((loop_count + 1))
               fi
 
-              local matched
+              local matched=""
               if [[ -n "$exclude_pattern" ]]; then
                 # 패턴 매칭 후 exclude_pattern이 없는 경우만 선택
                 if echo "$statement" | grep -iqE "$pattern"; then
