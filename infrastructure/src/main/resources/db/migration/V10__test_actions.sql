@@ -33,8 +33,8 @@ CREATE TABLE test_table (
 /*
  * [테스트 4] 복잡한 SQL이 포함된 주석
  * CREATE TABLE users (
- *   id INT PRIMARY KEY, -- 사용자 ID
- *   name VARCHAR(100), /* 이름 */
+ *   id INT PRIMARY KEY,
+ *   name VARCHAR(100),
  *   email VARCHAR(255)
  * );
  * DELETE FROM users WHERE id > 0;
