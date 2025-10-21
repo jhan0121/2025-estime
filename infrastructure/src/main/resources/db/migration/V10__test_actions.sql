@@ -71,9 +71,7 @@ WHERE id = 1
 -- [테스트 4] 멀티라인 UPDATE with WHERE
 UPDATE test_table
 SET value = 'updated',
-    name = 'updated'
-WHERE id = 1
-  AND name = 'test';
+    name = 'updated';
 
 
 -- ===================================================
