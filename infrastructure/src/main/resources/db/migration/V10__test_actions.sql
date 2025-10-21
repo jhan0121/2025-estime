@@ -133,7 +133,7 @@ CREATE INDEX idx_name ON test_table (name);
 DROP INDEX idx_name ON test_table;
 
 
---- 테이블 속성 변경 ---
+-- --- 테이블 속성 변경 ---
 
 -- 새 테이블 생성 (사전 준비)
 CREATE TABLE review_test_table (id INT PRIMARY KEY, value VARCHAR(255));
@@ -148,7 +148,7 @@ ALTER TABLE review_test_table CHARACTER SET utf8mb4;
 ALTER TABLE review_test_table COLLATE=utf8mb4_unicode_ci;
 
 
---- DB 제약조건 변경 ---
+-- --- DB 제약조건 변경 ---
 
 -- 제약조건 추가 (UNIQUE)
 ALTER TABLE test_table ADD CONSTRAINT unique_name UNIQUE (name);
@@ -160,7 +160,7 @@ ALTER TABLE test_table DROP CONSTRAINT unique_name;
 ALTER TABLE test_table ADD CONSTRAINT unique_name UNIQUE (name);
 
 
---- 데이터 변경 (UPDATE without WHERE) ---
+-- --- 데이터 변경 (UPDATE without WHERE) ---
 
 -- 데이터 추가
 INSERT INTO test_table (id, name, value) VALUES (2, 'Test Name 2', 'Test Value 2');
