@@ -124,7 +124,7 @@ ALTER TABLE test_table RENAME COLUMN value TO value_renamed;
 ALTER TABLE test_table RENAME COLUMN value_renamed TO value;
 
 
---- 인덱스 변경 ---
+-- --- 인덱스 변경 ---
 
 -- 인덱스 생성
 CREATE INDEX idx_name ON test_table (name);
