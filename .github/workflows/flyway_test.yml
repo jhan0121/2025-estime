@@ -5,7 +5,6 @@ on:
     branches:
       [ be/dev, be/prod ]
     paths:
-      - 'application/src/main/resources/db/migration/**'
       - 'infrastructure/src/main/resources/db/migration/**'
     types:
       [ opened, synchronize, reopened ]
@@ -29,7 +28,7 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: Github Repository 파일 불러오기
+      - name: GitHub Repository 파일 불러오기
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -81,9 +80,9 @@ jobs:
 
             local matched
             if [[ -n "$exclude_pattern" ]]; then
-              matched=$(echo "$SQL_CONTENT" | grep -iE "$pattern" | grep -viE "$exclude_pattern" || true)
+              matched=$(echo "$SQL_CONTENT" | tr '\n' ' ' | grep -iE "$pattern" | grep -viE "$exclude_pattern" || true)
             else
-              matched=$(echo "$SQL_CONTENT" | grep -iE "$pattern" || true)
+              matched=$(echo "$SQL_CONTENT" | tr '\n' ' ' | grep -iE "$pattern" || true)
             fi
 
             if [[ -n "$matched" ]]; then
@@ -101,9 +100,9 @@ jobs:
 
             local matched
             if [[ -n "$exclude_pattern" ]]; then
-              matched=$(echo "$SQL_CONTENT" | grep -iE "$pattern" | grep -viE "$exclude_pattern" || true)
+              matched=$(echo "$SQL_CONTENT" | tr '\n' ' ' | grep -iE "$pattern" | grep -viE "$exclude_pattern" || true)
             else
-              matched=$(echo "$SQL_CONTENT" | grep -iE "$pattern" || true)
+              matched=$(echo "$SQL_CONTENT" | tr '\n' ' ' | grep -iE "$pattern" || true)
             fi
 
             if [[ -n "$matched" ]]; then
@@ -201,7 +200,7 @@ jobs:
         run: |
           echo "Flyway 마이그레이션 검증 실행 시작..."
           
-          if ! ${{ env.FLYWAY_PATH }}/flyway migrate "-url=jdbc:mysql://127.0.0.1:3306/testdb?allowPublicKeyRetrieval=true&useSSL=false" "-user=${{ steps.create_user.outputs.flyway_user }}" "-password=${{ steps.create_user.outputs.flyway_password }}" "-locations=filesystem:application/src/main/resources/db/migration,filesystem:infrastructure/src/main/resources/db/migration" "-connectRetries=10" > flyway_migration.log 2>&1; then
+          if ! ${{ env.FLYWAY_PATH }}/flyway migrate "-url=jdbc:mysql://127.0.0.1:3306/testdb?allowPublicKeyRetrieval=true&useSSL=false" "-user=${{ steps.create_user.outputs.flyway_user }}" "-password=${{ steps.create_user.outputs.flyway_password }}" "-locations=filesystem:infrastructure/src/main/resources/db/migration" "-connectRetries=10" > flyway_migration.log 2>&1; then
             echo "마이그레이션 실패"
             echo "--- Flyway Log ---"
             cat flyway_migration.log

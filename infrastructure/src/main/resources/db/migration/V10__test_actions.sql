@@ -63,6 +63,18 @@ UPDATE test_table SET name = 'Updated Name' WHERE id = 1;
 -- WHERE 절이 있는 DELETE
 DELETE FROM test_table WHERE id = 1;
 
+-- [테스트 3] 멀티라인 DELETE with WHERE
+DELETE FROM test_table
+WHERE id = 1
+  AND name = 'test';
+
+-- [테스트 4] 멀티라인 UPDATE with WHERE
+UPDATE test_table
+SET value = 'updated',
+    name = 'updated'
+WHERE id = 1
+  AND name = 'test';
+
 
 -- ===================================================
 -- ❌ 금지 유형 SQL (Forbidden Commands)
